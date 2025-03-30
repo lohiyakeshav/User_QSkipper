@@ -116,6 +116,25 @@ class OrderManager: ObservableObject {
         }
     }
     
+    // Increment quantity of item at index
+    func incrementItem(at index: Int) {
+        guard index < currentCart.count else { return }
+        currentCart[index].quantity += 1
+        saveCart()
+    }
+    
+    // Decrement quantity of item at index
+    func decrementItem(at index: Int) {
+        guard index < currentCart.count else { return }
+        if currentCart[index].quantity > 1 {
+            currentCart[index].quantity -= 1
+        } else {
+            // Remove item if quantity would be zero
+            currentCart.remove(at: index)
+        }
+        saveCart()
+    }
+    
     // Clear cart
     func clearCart() {
         currentCart.removeAll()
@@ -139,6 +158,11 @@ class OrderManager: ObservableObject {
     // Get total price of all items in cart
     func getTotalPrice() -> Double {
         return currentCart.reduce(0) { $0 + $1.totalPrice }
+    }
+    
+    // Get cart total - alias for getTotalPrice for better readability
+    func getCartTotal() -> Double {
+        return getTotalPrice()
     }
     
     // Get quantity of a product in cart

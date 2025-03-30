@@ -49,11 +49,20 @@ class UserDefaultsManager {
     }
     
     func saveUserName(_ name: String) {
+        print("📝 SAVING USERNAME: \(name) with key: \(userNameKey)")
+        userDefaults.synchronize() // Make sure data is flushed before
         userDefaults.set(name, forKey: userNameKey)
+        userDefaults.synchronize() // Force immediate write
+        
+        // Verify the save worked
+        let savedName = userDefaults.string(forKey: userNameKey)
+        print("📝 VERIFICATION - Saved username: \(savedName ?? "nil")")
     }
     
     func getUserName() -> String? {
-        return userDefaults.string(forKey: userNameKey)
+        let name = userDefaults.string(forKey: userNameKey)
+        print("📱 UserDefaultsManager.getUserName() called, key=\(userNameKey), value=\(name ?? "nil")")
+        return name
     }
     
     func saveUserPhone(_ phone: String) {
@@ -94,12 +103,11 @@ class UserDefaultsManager {
         // Don't set logged in here - only after OTP is verified
     }
     
+    // Clear all user-related data
     func clearUserData() {
-        userDefaults.removeObject(forKey: tokenKey)
-        userDefaults.removeObject(forKey: userIdKey)
-        userDefaults.removeObject(forKey: userEmailKey)
-        userDefaults.removeObject(forKey: userNameKey)
-        userDefaults.removeObject(forKey: userPhoneKey)
+        for key in [userIdKey, userEmailKey, userNameKey, userPhoneKey, tokenKey] {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
         setUserLoggedIn(false)
     }
 } 

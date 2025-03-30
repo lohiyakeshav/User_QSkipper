@@ -7,84 +7,63 @@
 
 import SwiftUI
 
-// Create a shared background to reuse across views
-struct AppBackground: View {
-    var body: some View {
-        Image("splash_background")
-            .resizable()
-            .scaledToFill()
-            .overlay(
-                LinearGradient(
-                    gradient: Gradient(colors: [
-                        Color.black.opacity(0.7),
-                        Color.black.opacity(0.5),
-                        Color.black.opacity(0.3)
-                    ]),
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            )
-            .edgesIgnoringSafeArea(.all)
-    }
-}
-
 struct SplashView: View {
-    @StateObject private var authManager = AuthManager.shared
+    @EnvironmentObject private var authManager: AuthManager
     @State private var isActive = false
     
     var body: some View {
         NavigationView {
             ZStack {
-                // Background Image
-                AppBackground()
+                Image("splash_background")
+                    .resizable()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .scaledToFill()
+                    .ignoresSafeArea()
                 
-                // Logo centered
-                VStack {
-                    Spacer()
-                    
-                    Image("Logo")
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 180, height: 180)
-                    
-                    Spacer()
-                }
+                Image("Logo")
+                    .resizable()
+                    .frame(width: 120, height: 120)
             }
-            .navigationBarHidden(true)
             .onAppear {
+                print("SplashView appeared")
                 // Navigate to next screen after delay
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                    print("Timer completed, setting isActive to true")
                     withAnimation {
                         isActive = true
                     }
                 }
             }
-            .background(
-                NavigationLink(
-                    destination: destinationView,
-                    isActive: $isActive,
-                    label: { EmptyView() }
-                )
-            )
+            .navigationBarHidden(true)
+            .navigation(isActive: $isActive) {
+                if authManager.isLoggedIn {
+                    HomeView()
+                } else {
+                    StartView()
+                }
+            }
         }
-        .navigationViewStyle(.stack)
+        .navigationViewStyle(StackNavigationViewStyle())
     }
-    
-    @ViewBuilder
-    var destinationView: some View {
-        if authManager.isLoggedIn {
-            // User is already logged in, navigate to Home
-            HomeView()
-        } else {
-            // User is not logged in, navigate to Welcome screen
-            StartView()
-                .navigationBarHidden(true)
-        }
+}
+
+// Extension to simplify navigation
+extension View {
+    func navigation<Destination: View>(isActive: Binding<Bool>, @ViewBuilder destination: @escaping () -> Destination) -> some View {
+        overlay(
+            NavigationLink(
+                destination: isActive.wrappedValue ? destination() : nil,
+                isActive: isActive,
+                label: { EmptyView() }
+            )
+            .hidden()
+        )
     }
 }
 
 struct SplashView_Previews: PreviewProvider {
     static var previews: some View {
         SplashView()
+            .environmentObject(AuthManager.shared)
     }
 } 

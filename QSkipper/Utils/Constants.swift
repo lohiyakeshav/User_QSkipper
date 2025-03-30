@@ -17,23 +17,15 @@ struct AppColors {
 }
 
 struct AppFonts {
-    // Updated to use Satoshi fonts
-    static let title = Font.custom("Satoshi-Bold", size: 24)
-    static let subtitle = Font.custom("Satoshi-Medium", size: 18)
-    static let body = Font.custom("Satoshi-Regular", size: 16)
-    static let caption = Font.custom("Satoshi-Regular", size: 14)
-    static let button = Font.custom("Satoshi-Medium", size: 16)
-    static let buttonText = Font.custom("Satoshi-Bold", size: 16)
-    static let callToAction = Font.custom("Satoshi-Medium", size: 14)
-    static let sectionTitle = Font.custom("Satoshi-Bold", size: 18)
-    
-    // Fallback fonts in case custom fonts fail to load
-    static let titleFallback = Font.system(size: 24, weight: .bold)
-    static let subtitleFallback = Font.system(size: 18, weight: .semibold)
-    static let bodyFallback = Font.system(size: 16, weight: .regular)
-    static let captionFallback = Font.system(size: 14, weight: .regular)
-    static let buttonFallback = Font.system(size: 16, weight: .semibold)
-    static let callToActionFallback = Font.system(size: 14, weight: .medium)
+    // Using system fonts instead of custom Satoshi fonts
+    static let title = Font.system(size: 24, weight: .bold)
+    static let subtitle = Font.system(size: 18, weight: .semibold)
+    static let body = Font.system(size: 16, weight: .regular)
+    static let caption = Font.system(size: 14, weight: .regular)
+    static let button = Font.system(size: 16, weight: .semibold)
+    static let buttonText = Font.system(size: 16, weight: .bold)
+    static let callToAction = Font.system(size: 14, weight: .medium)
+    static let sectionTitle = Font.system(size: 18, weight: .bold)
 }
 
 struct AppConstants {

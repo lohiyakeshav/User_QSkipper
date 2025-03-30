@@ -33,9 +33,15 @@ class RegisterViewModel: ObservableObject {
             // Pass empty string for phone since we removed that field
             let receivedOTP = try await authManager.registerUser(email: email, name: name, phone: "")
             
-            // Update UI on main actor
-            self.otp = receivedOTP
-            self.otpSent = true
+            // Only set otpSent to true if we successfully get an OTP
+            if !receivedOTP.isEmpty {
+                self.otp = receivedOTP
+                self.otpSent = true
+            } else {
+                self.errorMessage = "Failed to receive OTP. Please try again."
+                self.showError = true
+            }
+            
             self.isLoading = false
         } catch {
             self.errorMessage = error.localizedDescription
@@ -60,7 +66,7 @@ class RegisterViewModel: ObservableObject {
             self.isLoading = false
             
             if success {
-                // Trigger navigation to location screen
+                // User is now registered and logged in, navigate to location screen
                 self.navigateToLocation = true
             } else {
                 self.errorMessage = "Invalid OTP. Please try again."
@@ -320,7 +326,7 @@ struct RegisterView: View {
                     Task {
                         await viewModel.verifyOTP()
                     }
-                }),
+                }, isRegistration: true),
                 isActive: $viewModel.otpSent,
                 label: { EmptyView() }
             )

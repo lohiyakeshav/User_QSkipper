@@ -12,101 +12,11 @@ struct ProfileView: View {
     @State private var showLogoutConfirmation = false
     
     var body: some View {
-        VStack(spacing: 20) {
-            // Profile Header
-            VStack(spacing: 15) {
-                Image(systemName: "person.circle.fill")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 100, height: 100)
-                    .foregroundColor(AppColors.primaryGreen)
-                    .padding(.top, 30)
-                
-                Text(authManager.getCurrentUserName() ?? "User")
-                    .font(AppFonts.title)
-                    .foregroundColor(AppColors.darkGray)
-                
-                Text(authManager.getCurrentUserEmail() ?? "")
-                    .font(AppFonts.body)
-                    .foregroundColor(AppColors.mediumGray)
-            }
-            .padding(.bottom, 20)
-            
-            // Profile Menu
-            VStack(spacing: 0) {
-                // My Orders
-                NavigationLink(destination: OrderHistoryView()) {
-                    MenuRow(icon: "bag", title: "My Orders")
-                }
-                
-                Divider()
-                
-                // Delivery Addresses
-                Button {
-                    // Navigate to delivery addresses
-                } label: {
-                    MenuRow(icon: "mappin.and.ellipse", title: "Delivery Addresses")
-                }
-                
-                Divider()
-                
-                // Payment Methods
-                Button {
-                    // Navigate to payment methods
-                } label: {
-                    MenuRow(icon: "creditcard", title: "Payment Methods")
-                }
-                
-                Divider()
-                
-                // Help Center
-                Button {
-                    // Navigate to help center
-                } label: {
-                    MenuRow(icon: "questionmark.circle", title: "Help Center")
-                }
-                
-                Divider()
-                
-                // About
-                Button {
-                    // Navigate to about
-                } label: {
-                    MenuRow(icon: "info.circle", title: "About QSkipper")
-                }
-            }
-            .background(AppColors.lightGray)
-            .cornerRadius(10)
-            .padding(.horizontal)
-            
-            Spacer()
-            
-            // Logout Button
-            Button {
-                showLogoutConfirmation = true
-            } label: {
-                HStack {
-                    Image(systemName: "rectangle.portrait.and.arrow.right")
-                        .foregroundColor(AppColors.errorRed)
-                    
-                    Text("Logout")
-                        .font(AppFonts.body)
-                        .foregroundColor(AppColors.errorRed)
-                }
-                .padding()
-                .frame(maxWidth: .infinity)
-                .background(Color.white)
-                .cornerRadius(10)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10)
-                        .stroke(AppColors.errorRed, lineWidth: 1)
-                )
-                .padding(.horizontal)
-                .padding(.bottom, 20)
-            }
+        ScrollView {
+            profileContent
         }
-        .navigationTitle("Profile")
-        .navigationBarTitleDisplayMode(.inline)
+        .background(Color.gray.opacity(0.05))
+        .edgesIgnoringSafeArea(.bottom)
         .alert("Logout", isPresented: $showLogoutConfirmation) {
             Button("Cancel", role: .cancel) { }
             Button("Logout", role: .destructive) {
@@ -115,30 +25,227 @@ struct ProfileView: View {
         } message: {
             Text("Are you sure you want to logout?")
         }
+        .onAppear {
+            // Get user information
+            let _ = authManager.getCurrentUserName()
+            let _ = authManager.getCurrentUserEmail()
+            let _ = authManager.getCurrentUserId()
+        }
+        .safeAreaInset(edge: .top) {
+            Color.clear.frame(height: 0)
+        }
+        .safeAreaInset(edge: .bottom) {
+            Color.clear.frame(height: 1)
+        }
+    }
+    
+    // MARK: - Main Profile Content
+    private var profileContent: some View {
+        VStack(spacing: 0) {
+            profileHeader
+            accountSettingsSection
+            supportSection
+            logoutButton
+            
+            // Bottom spacer for tab bar
+            Color.clear
+                .frame(height: 100)
+        }
+    }
+    
+    // MARK: - Profile Header
+    private var profileHeader: some View {
+        VStack(spacing: 5) {
+            // Welcome Text
+            HStack {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Hi, \(authManager.getCurrentUserName() ?? "User")")
+                        .font(.system(size: 28, weight: .bold))
+                        .foregroundColor(AppColors.darkGray)
+                    
+                    Text("Welcome to QSkipper")
+                        .font(.system(size: 16))
+                        .foregroundColor(AppColors.mediumGray)
+                }
+                
+                Spacer()
+                
+                // Profile avatar
+                ZStack {
+                    Circle()
+                        .fill(AppColors.primaryGreen.opacity(0.1))
+                        .frame(width: 70, height: 70)
+                    
+                    Text(getInitials())
+                        .font(.system(size: 28, weight: .bold))
+                        .foregroundColor(AppColors.primaryGreen)
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 20)
+            .padding(.bottom, 10)
+            
+            // User email
+            HStack {
+                Image(systemName: "envelope.fill")
+                    .foregroundColor(AppColors.primaryGreen)
+                    .font(.system(size: 14))
+                
+                Text(authManager.getCurrentUserEmail() ?? "keshav.lohiyas@gmail.com")
+                    .font(.system(size: 14))
+                    .foregroundColor(AppColors.mediumGray)
+                
+                Spacer()
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 20)
+        }
+        .padding(.bottom, 10)
+        .background(Color.white)
+    }
+    
+    // MARK: - Account Settings Section
+    private var accountSettingsSection: some View {
+        VStack(spacing: 0) {
+            // Section header
+            Text("Account Settings")
+                .font(.system(size: 16, weight: .medium))
+                .foregroundColor(.gray)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 15)
+                .background(Color.gray.opacity(0.05))
+            
+            // Account settings menu
+            VStack(spacing: 0) {
+                MenuRow(icon: "bag", title: "My Orders") {
+                    print("Navigate to My Orders")
+                }
+                
+                Divider()
+                    .padding(.leading, 60)
+                
+                MenuRow(icon: "mappin.and.ellipse", title: "Delivery Addresses") {
+                    print("Navigate to Delivery Addresses")
+                }
+                
+                Divider()
+                    .padding(.leading, 60)
+                
+                MenuRow(icon: "creditcard", title: "Payment Methods") {
+                    print("Navigate to Payment Methods")
+                }
+            }
+            .background(Color.white)
+        }
+    }
+    
+    // MARK: - Support Section
+    private var supportSection: some View {
+        VStack(spacing: 0) {
+            // Section header
+            Text("Support & About")
+                .font(.system(size: 16, weight: .medium))
+                .foregroundColor(.gray)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 15)
+                .background(Color.gray.opacity(0.05))
+            
+            // Support menu
+            VStack(spacing: 0) {
+                MenuRow(icon: "questionmark.circle", title: "Help Center") {
+                    print("Navigate to Help Center")
+                }
+                
+                Divider()
+                    .padding(.leading, 60)
+                
+                MenuRow(icon: "info.circle", title: "About QSkipper") {
+                    print("Navigate to About")
+                }
+            }
+            .background(Color.white)
+        }
+    }
+    
+    // MARK: - Logout Button
+    private var logoutButton: some View {
+        Button {
+            showLogoutConfirmation = true
+        } label: {
+            HStack {
+                Image(systemName: "rectangle.portrait.and.arrow.right")
+                    .foregroundColor(.red)
+                
+                Text("Logout")
+                    .foregroundColor(.red)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 15)
+            .background(Color.white)
+            .cornerRadius(8)
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color.red, lineWidth: 1)
+            )
+            .padding(.horizontal, 20)
+            .padding(.top, 30)
+        }
+    }
+    
+    private func getInitials() -> String {
+        let name = authManager.getCurrentUserName() ?? ""
+        
+        // If name is empty, return "U" as fallback
+        if name.isEmpty {
+            return "U"
+        }
+        
+        let components = name.components(separatedBy: " ")
+        var initials = ""
+        
+        for component in components {
+            if let firstChar = component.first {
+                initials.append(firstChar)
+            }
+        }
+        
+        // If no initials could be extracted, return "U" as fallback
+        return initials.isEmpty ? "U" : initials.prefix(2).uppercased()
     }
 }
 
 struct MenuRow: View {
     let icon: String
     let title: String
+    let action: () -> Void
     
     var body: some View {
-        HStack {
-            Image(systemName: icon)
-                .frame(width: 30)
-                .foregroundColor(AppColors.primaryGreen)
-            
-            Text(title)
-                .font(AppFonts.body)
-                .foregroundColor(AppColors.darkGray)
-            
-            Spacer()
-            
-            Image(systemName: "chevron.right")
-                .foregroundColor(AppColors.mediumGray)
+        Button(action: action) {
+            HStack {
+                Image(systemName: icon)
+                    .font(.system(size: 18))
+                    .foregroundColor(AppColors.primaryGreen)
+                    .frame(width: 24, height: 24)
+                    .padding(.leading, 20)
+                
+                Text(title)
+                    .font(.system(size: 16))
+                    .foregroundColor(.black)
+                    .padding(.leading, 15)
+                
+                Spacer()
+                
+                Image(systemName: "chevron.right")
+                    .foregroundColor(.gray)
+                    .font(.system(size: 14))
+                    .padding(.trailing, 20)
+            }
+            .padding(.vertical, 15)
+            .background(Color.white)
         }
-        .padding()
-        .background(Color.white)
+        .buttonStyle(PlainButtonStyle())
     }
 }
 

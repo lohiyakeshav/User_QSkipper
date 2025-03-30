@@ -52,8 +52,12 @@ class AuthManager: ObservableObject {
             
             // Store username and ID if available
             if let username = response.username, let id = response.id {
-                let user = User(id: id, email: email, name: username, phone: nil, token: nil)
+                print("Storing user information - ID: \(id), Email: \(email), Username: \(username)")
                 userDefaultsManager.savePartialUser(id: id, email: email, username: username)
+            } else if let id = response.id {
+                // If username is not provided but ID is available
+                print("Storing user information - ID: \(id), Email: \(email)")
+                userDefaultsManager.savePartialUser(id: id, email: email, username: "User")
             }
             
             // For development, we'll return the OTP received directly
@@ -85,15 +89,11 @@ class AuthManager: ObservableObject {
             let verificationRequest = OTPVerificationRequest(email: email, otp: otp)
             let jsonData = try JSONEncoder().encode(verificationRequest)
             
-            print("Sending verify login request to \(APIEndpoints.verifyLogin) with data: \(String(data: jsonData, encoding: .utf8) ?? "")")
-            
             let response: AuthResponse = try await networkManager.makeRequest(
                 url: APIEndpoints.verifyLogin,
                 method: "POST",
                 body: jsonData
             )
-            
-            print("Verify login response received: \(response)")
             
             // Check if response is successful using the computed property
             if !response.isSuccess {
@@ -101,10 +101,30 @@ class AuthManager: ObservableObject {
                 return false
             }
             
+            // Get username from various sources with priority
+            let username: String
+            if let responseUsername = response.username, !responseUsername.isEmpty {
+                username = responseUsername
+            } else if let user = response.user, let userName = user.name, !userName.isEmpty {
+                username = userName
+            } else {
+                // Use the name we saved during login OTP request
+                username = userDefaultsManager.getUserName() ?? "User"
+            }
+            
             // Check if response has user data or just an ID
             if let user = response.user {
+                // Create a new user with our determined username
+                let updatedUser = User(
+                    id: user.id, 
+                    email: user.email, 
+                    name: username,  // Use our determined username
+                    phone: user.phone, 
+                    token: user.token ?? response.token
+                )
+                
                 // Save user data
-                userDefaultsManager.saveUser(user)
+                userDefaultsManager.saveUser(updatedUser)
                 
                 // Update login status
                 self.isLoggedIn = true
@@ -112,8 +132,13 @@ class AuthManager: ObservableObject {
                 return true
             } else if let id = response.id {
                 // If we only got an ID, create minimal user data
-                let username = response.username ?? ""
-                let user = User(id: id, email: email, name: username, phone: nil, token: response.token)
+                let user = User(
+                    id: id, 
+                    email: email, 
+                    name: username,  // Use our determined username
+                    phone: nil, 
+                    token: response.token
+                )
                 userDefaultsManager.saveUser(user)
                 
                 // Update login status
@@ -125,7 +150,6 @@ class AuthManager: ObservableObject {
                 return false
             }
         } catch {
-            print("Verify login error: \(error)")
             if let networkError = error as? SimpleNetworkError {
                 self.error = networkError.message
             } else {
@@ -251,6 +275,39 @@ class AuthManager: ObservableObject {
     
     // Get current user name
     func getCurrentUserName() -> String? {
-        return userDefaultsManager.getUserName()
+        let name = userDefaultsManager.getUserName()
+        print("🔍 AuthManager.getCurrentUserName() called, returning: \(name ?? "nil")")
+        return name
+    }
+    
+    // Resend OTP (works for both login and registration)
+    @MainActor
+    func resendOTP(email: String, isRegistration: Bool = false) async throws -> String {
+        isLoading = true
+        error = nil
+        
+        defer { isLoading = false }
+        
+        do {
+            if isRegistration {
+                // Get existing user data if available
+                let name = userDefaultsManager.getUserName() ?? ""
+                let phone = userDefaultsManager.getUserPhone() ?? ""
+                
+                // Use the register endpoint to resend OTP
+                return try await registerUser(email: email, name: name, phone: phone)
+            } else {
+                // Use the login endpoint to resend OTP
+                return try await requestLoginOTP(email: email)
+            }
+        } catch {
+            print("Resend OTP error: \(error)")
+            if let networkError = error as? SimpleNetworkError {
+                self.error = networkError.message
+            } else {
+                self.error = error.localizedDescription
+            }
+            throw error
+        }
     }
 } 

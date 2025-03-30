@@ -48,47 +48,55 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     }
     
     func requestLocation() {
-        // Move authorization check to background thread
-        Task {
-            // Check existing status first
-            let status = locationManager.authorizationStatus
+        // First check current authorization status
+        let status = locationManager.authorizationStatus
+        
+        // Handle based on current status
+        switch status {
+        case .authorizedWhenInUse, .authorizedAlways:
+            // Already authorized, just request location
+            locationManager.requestLocation()
             
-            // Only request authorization if not determined yet
-            if status == .notDetermined {
-                // Jump to main thread to request authorization
-                await MainActor.run {
-                    locationManager.requestWhenInUseAuthorization()
-                }
-            } else if status == .authorizedWhenInUse || status == .authorizedAlways {
-                // If already authorized, just request location
-                await MainActor.run {
-                    locationManager.requestLocation()
-                }
-            }
+        case .notDetermined:
+            // Request authorization - the callback will handle the next steps
+            locationManager.requestWhenInUseAuthorization()
+            // We don't request location here - we'll wait for the authorization callback
+            
+        case .denied, .restricted:
+            // Handle denied access
+            self.isLocationServiceAvailable = false
+            self.error = "Location access denied"
+            // Use default location
+            self.location = self.defaultLocation
+            self.getPlaceName(for: self.defaultLocation)
+            
+        @unknown default:
+            self.isLocationServiceAvailable = false
+            self.error = "Unknown location authorization status"
         }
     }
     
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
-        DispatchQueue.main.async {
-            self.locationStatus = manager.authorizationStatus
-            
-            switch manager.authorizationStatus {
-            case .authorizedWhenInUse, .authorizedAlways:
-                self.isLocationServiceAvailable = true
-                self.locationManager.startUpdatingLocation()
-            case .denied, .restricted:
-                self.isLocationServiceAvailable = false
-                self.error = "Location access denied"
-                // Use default location (Galgotias University)
-                self.location = self.defaultLocation
-                self.getPlaceName(for: self.defaultLocation)
-            case .notDetermined:
-                self.isLocationServiceAvailable = false
-                self.locationManager.requestWhenInUseAuthorization()
-            @unknown default:
-                self.isLocationServiceAvailable = false
-                self.error = "Unknown location authorization status"
-            }
+        self.locationStatus = manager.authorizationStatus
+        
+        switch manager.authorizationStatus {
+        case .authorizedWhenInUse, .authorizedAlways:
+            self.isLocationServiceAvailable = true
+            // Request a one-time location update instead of starting continuous updates
+            self.locationManager.requestLocation()
+        case .denied, .restricted:
+            self.isLocationServiceAvailable = false
+            self.error = "Location access denied"
+            // Use default location (Galgotias University)
+            self.location = self.defaultLocation
+            self.getPlaceName(for: self.defaultLocation)
+        case .notDetermined:
+            self.isLocationServiceAvailable = false
+            // Don't request authorization here again - it would create a loop
+            // We'll wait for the user to trigger requestLocation() explicitly
+        @unknown default:
+            self.isLocationServiceAvailable = false
+            self.error = "Unknown location authorization status"
         }
     }
     

@@ -1,0 +1,9 @@
+INFOPLIST_FILE = QSkipper/Info.plist
+GENERATE_INFOPLIST_FILE = NO
+
+// Basic Info.plist keys
+INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = QSkipper needs your location to find nearby restaurants and deliver food to your current location.
+INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = QSkipper needs your location to find nearby restaurants and deliver food to your current location.
+INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES
+INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES
+INFOPLIST_KEY_UILaunchScreen_Generation = YES

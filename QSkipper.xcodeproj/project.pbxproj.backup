@@ -10,22 +10,9 @@
 		898C087D2D951976001043AF /* QSkipper.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = QSkipper.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
-/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		8986B9BE2D995F040051503D /* Exceptions for "QSkipper" folder in "QSkipper" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				Info.plist,
-			);
-			target = 898C087C2D951976001043AF /* QSkipper */;
-		};
-/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
-
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		898C087F2D951976001043AF /* QSkipper */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				8986B9BE2D995F040051503D /* Exceptions for "QSkipper" folder in "QSkipper" target */,
-			);
 			path = QSkipper;
 			sourceTree = "<group>";
 		};

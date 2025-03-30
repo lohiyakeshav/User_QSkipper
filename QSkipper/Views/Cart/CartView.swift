@@ -9,19 +9,308 @@ import SwiftUI
 
 struct CartView: View {
     @Environment(\.presentationMode) var presentationMode
-    @EnvironmentObject var orderManager: OrderManager
-    @State private var specialInstructions: String = ""
-    @State private var isPlacingOrder = false
-    @State private var orderPlaced = false
-    @State private var errorMessage: String? = nil
+    @EnvironmentObject private var orderManager: OrderManager
+    @StateObject private var viewModel = CartViewModel()
+    @State private var showOrderSuccess = false
     
     var body: some View {
         NavigationView {
-            VStack {
-                if orderManager.currentCart.isEmpty {
-                    emptyCartView
-                } else {
-                    cartContentView
+            ZStack {
+                Color.gray.opacity(0.05).edgesIgnoringSafeArea(.all)
+                
+                VStack {
+                    // Cart items
+                    if orderManager.currentCart.isEmpty {
+                        // Empty state
+                        VStack(spacing: 20) {
+                            Spacer()
+                            
+                            Image(systemName: "cart")
+                                .font(.system(size: 60))
+                                .foregroundColor(AppColors.primaryGreen.opacity(0.4))
+                            
+                            Text("Your cart is empty")
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundColor(AppColors.darkGray)
+                            
+                            Text("Add some items to your cart")
+                                .font(.system(size: 14))
+                                .foregroundColor(AppColors.mediumGray)
+                                .multilineTextAlignment(.center)
+                            
+                            Button {
+                                presentationMode.wrappedValue.dismiss()
+                            } label: {
+                                Text("Continue Shopping")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 30)
+                                    .padding(.vertical, 12)
+                                    .background(AppColors.primaryGreen)
+                                    .cornerRadius(8)
+                            }
+                            .padding(.top, 15)
+                            
+                            Spacer()
+                        }
+                        .padding()
+                    } else {
+                        ScrollView {
+                            VStack(spacing: 0) {
+                                // Restaurant info
+                                if let restaurant = viewModel.restaurant {
+                                    HStack(spacing: 12) {
+                                        // Restaurant image
+                                        RestaurantImageView(photoId: restaurant.photoId, name: restaurant.name)
+                                            .frame(width: 50, height: 50)
+                                            .cornerRadius(8)
+                                        
+                                        // Restaurant info
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(restaurant.name)
+                                                .font(.system(size: 16, weight: .semibold))
+                                                .foregroundColor(AppColors.darkGray)
+                                            
+                                            Text(restaurant.location)
+                                                .font(.system(size: 12))
+                                                .foregroundColor(AppColors.mediumGray)
+                                        }
+                                        
+                                        Spacer()
+                                        
+                                        // Restaurant rating
+                                        HStack(spacing: 2) {
+                                            Image(systemName: "star.fill")
+                                                .foregroundColor(.yellow)
+                                                .font(.system(size: 12))
+                                            
+                                            Text(String(format: "%.1f", restaurant.rating))
+                                                .font(.system(size: 12, weight: .medium))
+                                                .foregroundColor(AppColors.darkGray)
+                                        }
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .background(Color.gray.opacity(0.1))
+                                        .cornerRadius(8)
+                                    }
+                                    .padding(.horizontal, 20)
+                                    .padding(.vertical, 15)
+                                    .background(Color.white)
+                                }
+                                
+                                // Section Title
+                                HStack {
+                                    Text("YOUR ORDER")
+                                        .font(.system(size: 12, weight: .medium))
+                                        .foregroundColor(AppColors.mediumGray)
+                                        .padding(.horizontal, 20)
+                                        .padding(.vertical, 12)
+                                    
+                                    Spacer()
+                                    
+                                    Button {
+                                        withAnimation {
+                                            orderManager.clearCart()
+                                        }
+                                    } label: {
+                                        Text("Clear Cart")
+                                            .font(.system(size: 12, weight: .medium))
+                                            .foregroundColor(AppColors.errorRed)
+                                            .padding(.horizontal, 20)
+                                    }
+                                }
+                                .background(Color.gray.opacity(0.05))
+                                
+                                // Cart items
+                                ForEach(orderManager.currentCart.indices, id: \.self) { index in
+                                    let item = orderManager.currentCart[index]
+                                    CartItemRow(
+                                        item: item,
+                                        onIncrement: {
+                                            orderManager.incrementItem(at: index)
+                                        },
+                                        onDecrement: {
+                                            orderManager.decrementItem(at: index)
+                                        }
+                                    )
+                                    .padding(.horizontal, 20)
+                                    .padding(.vertical, 12)
+                                    .background(Color.white)
+                                    
+                                    if index < orderManager.currentCart.count - 1 {
+                                        Divider()
+                                            .padding(.leading, 80)
+                                            .padding(.trailing, 20)
+                                    }
+                                }
+                                
+                                // Section Title
+                                HStack {
+                                    Text("BILL DETAILS")
+                                        .font(.system(size: 12, weight: .medium))
+                                        .foregroundColor(AppColors.mediumGray)
+                                        .padding(.horizontal, 20)
+                                        .padding(.vertical, 12)
+                                    
+                                    Spacer()
+                                }
+                                .background(Color.gray.opacity(0.05))
+                                
+                                // Bill details
+                                VStack(spacing: 15) {
+                                    // Item total
+                                    HStack {
+                                        Text("Item Total")
+                                            .font(.system(size: 14))
+                                            .foregroundColor(AppColors.darkGray)
+                                        
+                                        Spacer()
+                                        
+                                        Text("₹\(String(format: "%.0f", orderManager.getCartTotal()))")
+                                            .font(.system(size: 14))
+                                            .foregroundColor(AppColors.darkGray)
+                                    }
+                                    
+                                    // Delivery fee
+                                    HStack {
+                                        Text("Delivery Fee")
+                                            .font(.system(size: 14))
+                                            .foregroundColor(AppColors.darkGray)
+                                        
+                                        Spacer()
+                                        
+                                        Text("₹\(String(format: "%.0f", viewModel.getDeliveryFee()))")
+                                            .font(.system(size: 14))
+                                            .foregroundColor(AppColors.darkGray)
+                                    }
+                                    
+                                    // Platform fee
+                                    HStack {
+                                        Text("Platform Fee")
+                                            .font(.system(size: 14))
+                                            .foregroundColor(AppColors.darkGray)
+                                        
+                                        Spacer()
+                                        
+                                        Text("₹\(String(format: "%.0f", viewModel.getPlatformFee()))")
+                                            .font(.system(size: 14))
+                                            .foregroundColor(AppColors.darkGray)
+                                    }
+                                    
+                                    // Taxes
+                                    HStack {
+                                        Text("GST and Restaurant Charges")
+                                            .font(.system(size: 14))
+                                            .foregroundColor(AppColors.darkGray)
+                                        
+                                        Spacer()
+                                        
+                                        Text("₹\(String(format: "%.0f", viewModel.getTaxes()))")
+                                            .font(.system(size: 14))
+                                            .foregroundColor(AppColors.darkGray)
+                                    }
+                                    
+                                    Divider()
+                                        .padding(.vertical, 5)
+                                    
+                                    // Total
+                                    HStack {
+                                        Text("Total")
+                                            .font(.system(size: 16, weight: .semibold))
+                                            .foregroundColor(AppColors.darkGray)
+                                        
+                                        Spacer()
+                                        
+                                        Text("₹\(String(format: "%.0f", viewModel.getTotalAmount()))")
+                                            .font(.system(size: 16, weight: .semibold))
+                                            .foregroundColor(AppColors.primaryGreen)
+                                    }
+                                }
+                                .padding(.horizontal, 20)
+                                .padding(.vertical, 15)
+                                .background(Color.white)
+                                
+                                // Special instructions
+                                VStack(alignment: .leading, spacing: 10) {
+                                    Text("Special Instructions")
+                                        .font(.system(size: 14, weight: .semibold))
+                                        .foregroundColor(AppColors.darkGray)
+                                    
+                                    TextEditor(text: $viewModel.specialInstructions)
+                                        .font(.system(size: 14))
+                                        .foregroundColor(.black)
+                                        .padding(10)
+                                        .frame(height: 100)
+                                        .background(Color.gray.opacity(0.1))
+                                        .cornerRadius(8)
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 8)
+                                                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                                        )
+                                }
+                                .padding(.horizontal, 20)
+                                .padding(.vertical, 15)
+                                .background(Color.white)
+                                
+                                // Bottom padding
+                                Color.clear
+                                    .frame(height: 100)
+                            }
+                        }
+                        
+                        // Checkout button
+                        VStack {
+                            Button {
+                                viewModel.isProcessingOrder = true
+                                
+                                // Simulate order processing
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                                    viewModel.isProcessingOrder = false
+                                    showOrderSuccess = true
+                                }
+                            } label: {
+                                HStack {
+                                    Text("Proceed to Pay")
+                                        .font(.system(size: 16, weight: .semibold))
+                                        .foregroundColor(.white)
+                                    
+                                    Spacer()
+                                    
+                                    Text("₹\(String(format: "%.0f", viewModel.getTotalAmount()))")
+                                        .font(.system(size: 16, weight: .semibold))
+                                        .foregroundColor(.white)
+                                }
+                                .padding(.horizontal, 20)
+                                .padding(.vertical, 15)
+                                .background(AppColors.primaryGreen)
+                                .cornerRadius(8)
+                            }
+                            .disabled(viewModel.isProcessingOrder)
+                            .opacity(viewModel.isProcessingOrder ? 0.7 : 1)
+                            .overlay(
+                                Group {
+                                    if viewModel.isProcessingOrder {
+                                        ProgressView()
+                                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                    }
+                                }
+                            )
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 10)
+                            .background(Color.white)
+                            .shadow(color: Color.black.opacity(0.1), radius: 5, x: 0, y: -2)
+                        }
+                    }
+                }
+                
+                if showOrderSuccess {
+                    OrderSuccessView {
+                        self.orderManager.clearCart()
+                        self.showOrderSuccess = false
+                        self.presentationMode.wrappedValue.dismiss()
+                    }
+                    .transition(.opacity)
+                    .animation(.easeInOut, value: showOrderSuccess)
                 }
             }
             .navigationTitle("Your Cart")
@@ -32,304 +321,163 @@ struct CartView: View {
                         presentationMode.wrappedValue.dismiss()
                     } label: {
                         Image(systemName: "xmark")
-                            .foregroundColor(.black)
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(AppColors.darkGray)
                     }
                 }
             }
-            .alert(isPresented: .constant(errorMessage != nil)) {
-                Alert(
-                    title: Text("Error"),
-                    message: Text(errorMessage ?? "An error occurred"),
-                    dismissButton: .default(Text("OK")) {
-                        errorMessage = nil
-                    }
-                )
+            .onAppear {
+                viewModel.setupCart(with: orderManager.currentCart)
             }
-            .overlay {
-                if isPlacingOrder {
-                    LoadingView(message: "Placing your order...")
-                }
-                
-                if orderPlaced {
-                    OrderSuccessView {
-                        orderManager.clearCart()
-                        orderPlaced = false
-                        presentationMode.wrappedValue.dismiss()
-                    }
-                }
-            }
-        }
-    }
-    
-    // Empty cart view
-    private var emptyCartView: some View {
-        VStack(spacing: 20) {
-            Spacer()
-            
-            AnimationView()
-                .frame(height: 200)
-            
-            Text("Your cart is empty")
-                .font(AppFonts.title)
-                .foregroundColor(AppColors.darkGray)
-            
-            Text("Add items to your cart to continue")
-                .font(AppFonts.body)
-                .foregroundColor(AppColors.mediumGray)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 40)
-            
-            Button {
-                presentationMode.wrappedValue.dismiss()
-            } label: {
-                Text("Browse Menu")
-                    .font(AppFonts.buttonText)
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 40)
-                    .padding(.vertical, 14)
-                    .background(AppColors.primaryGreen)
-                    .cornerRadius(10)
-            }
-            .padding(.top, 20)
-            
-            Spacer()
-        }
-    }
-    
-    // Cart content view
-    private var cartContentView: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                // Cart items section
-                VStack(alignment: .leading) {
-                    Text("Order Items")
-                        .font(AppFonts.sectionTitle)
-                        .padding(.horizontal, 20)
-                    
-                    ForEach(orderManager.currentCart) { item in
-                        CartItemRow(item: item)
-                    }
-                }
-                .padding(.top, 10)
-                
-                // Special instructions
-                VStack(alignment: .leading) {
-                    Text("Special Instructions")
-                        .font(AppFonts.sectionTitle)
-                        .padding(.horizontal, 20)
-                    
-                    TextField("Add notes for your order (optional)", text: $specialInstructions)
-                        .padding()
-                        .background(Color.gray.opacity(0.1))
-                        .cornerRadius(10)
-                        .padding(.horizontal, 20)
-                }
-                
-                // Order summary
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Order Summary")
-                        .font(AppFonts.sectionTitle)
-                        .padding(.horizontal, 20)
-                    
-                    VStack(spacing: 10) {
-                        HStack {
-                            Text("Item Total")
-                                .foregroundColor(AppColors.mediumGray)
-                            Spacer()
-                            Text("₹\(String(format: "%.2f", orderManager.getTotalPrice()))")
-                                .foregroundColor(AppColors.darkGray)
-                        }
-                        
-                        HStack {
-                            Text("Delivery Fee")
-                                .foregroundColor(AppColors.mediumGray)
-                            Spacer()
-                            Text("₹40.00")
-                                .foregroundColor(AppColors.darkGray)
-                        }
-                        
-                        HStack {
-                            Text("Platform Fee")
-                                .foregroundColor(AppColors.mediumGray)
-                            Spacer()
-                            Text("₹10.00")
-                                .foregroundColor(AppColors.darkGray)
-                        }
-                        
-                        Divider()
-                            .padding(.vertical, 5)
-                        
-                        HStack {
-                            Text("Total")
-                                .font(.system(size: 16, weight: .semibold))
-                            Spacer()
-                            Text("₹\(String(format: "%.2f", orderManager.getTotalPrice() + 50.0))")
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundColor(AppColors.primaryGreen)
-                        }
-                    }
-                    .padding()
-                    .background(Color.white)
-                    .cornerRadius(10)
-                    .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
-                    .padding(.horizontal, 20)
-                }
-                
-                // Checkout button
-                Button {
-                    placeOrder()
-                } label: {
-                    HStack {
-                        Spacer()
-                        Text("Proceed to Payment")
-                            .font(AppFonts.buttonText)
-                            .foregroundColor(.white)
-                        Spacer()
-                    }
-                    .padding()
-                    .background(AppColors.primaryGreen)
-                    .cornerRadius(10)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 10)
-                }
-                
-                // Spacer at the bottom to allow scrolling
-                Color.clear.frame(height: 30)
-            }
-        }
-    }
-    
-    // Place order function
-    private func placeOrder() {
-        // Demo order placement
-        isPlacingOrder = true
-        orderManager.specialInstructions = specialInstructions
-        
-        // Simulate network request
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            isPlacingOrder = false
-            orderPlaced = true
         }
     }
 }
 
-// Cart item row
 struct CartItemRow: View {
-    @EnvironmentObject var orderManager: OrderManager
     let item: CartItem
+    let onIncrement: () -> Void
+    let onDecrement: () -> Void
     
     var body: some View {
         HStack(spacing: 15) {
+            // Veg/Non-veg indicator
+            ZStack {
+                RoundedRectangle(cornerRadius: 3)
+                    .stroke(item.product.isVeg ? Color.green : Color.red, lineWidth: 1)
+                    .frame(width: 16, height: 16)
+                
+                Circle()
+                    .fill(item.product.isVeg ? Color.green : Color.red)
+                    .frame(width: 8, height: 8)
+            }
+            
             // Product image
             ProductImageView(photoId: item.product.photoId, name: item.product.name, category: item.product.category)
-                .frame(width: 60, height: 60)
+                .frame(width: 50, height: 50)
                 .cornerRadius(8)
             
-            // Product info
+            // Product details
             VStack(alignment: .leading, spacing: 4) {
                 Text(item.product.name)
                     .font(.system(size: 14, weight: .medium))
                     .foregroundColor(AppColors.darkGray)
                 
-                Text("₹\(String(format: "%.2f", item.product.price)) x \(item.quantity)")
+                Text("₹\(String(format: "%.0f", item.product.price))")
                     .font(.system(size: 12))
-                    .foregroundColor(AppColors.mediumGray)
-                    .padding(.top, 2)
+                    .foregroundColor(AppColors.primaryGreen)
+            }
+            
+            Spacer()
+            
+            // Quantity controls
+            HStack(spacing: 0) {
+                Button {
+                    onDecrement()
+                } label: {
+                    Image(systemName: "minus")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(item.quantity > 1 ? AppColors.primaryGreen : Color.gray)
+                        .frame(width: 28, height: 28)
+                        .background(Color.gray.opacity(0.1))
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                }
+                .disabled(item.quantity <= 1)
                 
-                HStack {
-                   
-                    
-                    // Quantity controls
-                    Spacer()
-                    
-                    Button {
-                        if item.quantity > 1 {
-                            orderManager.updateCartItemQuantity(productId: item.productId, quantity: item.quantity - 1)
-                        }
-                    } label: {
-                        Image(systemName: "minus")
-                            .font(.system(size: 12, weight: .bold))
-                            .foregroundColor(.white)
-                            .frame(width: 24, height: 24)
-                            .background(AppColors.primaryGreen)
-                    }
-                    
-                    Text("\(item.quantity)")
-                        .font(.system(size: 14, weight: .medium))
-                        .frame(width: 30)
-                    
-                    Button {
-                        orderManager.updateCartItemQuantity(productId: item.productId, quantity: item.quantity + 1)
-                    } label: {
-                        Image(systemName: "plus")
-                            .font(.system(size: 12, weight: .bold))
-                            .foregroundColor(.white)
-                            .frame(width: 24, height: 24)
-                            .background(AppColors.primaryGreen)
-                    }
+                Text("\(item.quantity)")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(AppColors.darkGray)
+                    .frame(width: 30)
+                
+                Button {
+                    onIncrement()
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(AppColors.primaryGreen)
+                        .frame(width: 28, height: 28)
+                        .background(Color.gray.opacity(0.1))
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            
-            // Remove button
-            Button {
-                orderManager.removeFromCart(productId: item.productId)
-            } label: {
-                Image(systemName: "trash")
-                    .foregroundColor(.red)
-                    .opacity(0.7)
-            }
-            .padding(.horizontal, 5)
         }
-        .padding()
-        .background(Color.white)
-        .cornerRadius(10)
-        .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
-        .padding(.horizontal, 20)
     }
 }
 
-// Order success view
 struct OrderSuccessView: View {
-    var onDismiss: () -> Void
+    let onDone: () -> Void
     
     var body: some View {
         ZStack {
             Color.black.opacity(0.5)
                 .edgesIgnoringSafeArea(.all)
             
-            VStack(spacing: 25) {
-                AnimationView()
-                    .frame(height: 150)
+            VStack(spacing: 20) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 80))
+                    .foregroundColor(AppColors.primaryGreen)
+                    .padding(.top, 30)
                 
-                Text("Order Placed Successfully!")
-                    .font(AppFonts.title)
+                Text("Order Placed!")
+                    .font(.system(size: 24, weight: .bold))
                     .foregroundColor(AppColors.darkGray)
                 
-                Text("Your order has been placed successfully. You can track your order in the orders section.")
-                    .font(AppFonts.body)
+                Text("Your order has been placed successfully.\nYou can track your order status in the Orders section.")
+                    .font(.system(size: 16))
                     .foregroundColor(AppColors.mediumGray)
                     .multilineTextAlignment(.center)
-                    .padding(.horizontal, 20)
+                    .padding(.horizontal, 30)
                 
                 Button {
-                    onDismiss()
+                    onDone()
                 } label: {
-                    Text("Continue Shopping")
-                        .font(AppFonts.buttonText)
+                    Text("Done")
+                        .font(.system(size: 16, weight: .semibold))
                         .foregroundColor(.white)
                         .padding(.horizontal, 40)
-                        .padding(.vertical, 14)
+                        .padding(.vertical, 12)
                         .background(AppColors.primaryGreen)
-                        .cornerRadius(10)
+                        .cornerRadius(8)
                 }
-                .padding(.top, 10)
+                .padding(.top, 20)
+                .padding(.bottom, 30)
             }
-            .padding(30)
+            .padding()
             .background(Color.white)
-            .cornerRadius(20)
+            .cornerRadius(16)
             .padding(.horizontal, 40)
         }
+    }
+}
+
+class CartViewModel: ObservableObject {
+    @Published var restaurant: Restaurant?
+    @Published var specialInstructions: String = ""
+    @Published var isProcessingOrder: Bool = false
+    
+    private let restaurantManager = RestaurantManager.shared
+    
+    func setupCart(with items: [CartItem]) {
+        if let firstItem = items.first {
+            self.restaurant = restaurantManager.getRestaurant(by: firstItem.product.restaurantId)
+        }
+    }
+    
+    func getDeliveryFee() -> Double {
+        return 40.0 // Fixed delivery fee
+    }
+    
+    func getPlatformFee() -> Double {
+        return 20.0 // Fixed platform fee
+    }
+    
+    func getTaxes() -> Double {
+        // Assume 5% tax on item total
+        return OrderManager.shared.getCartTotal() * 0.05
+    }
+    
+    func getTotalAmount() -> Double {
+        let itemTotal = OrderManager.shared.getCartTotal()
+        return itemTotal + getDeliveryFee() + getPlatformFee() + getTaxes()
     }
 }
 

@@ -7,10 +7,12 @@
 
 import Foundation
 import UIKit
+import SwiftUI // For accessing our app's Utils folder
 
 // NetworkUtils for handling common network operations
 class NetworkUtils {
-    var baseURl = URL(string: "https://queueskipperbackend.onrender.com/")!
+    // Base URL for API endpoints
+    let baseURl = URL(string: "https://queueskipperbackend.onrender.com/")!
     
     static let shared = NetworkUtils()
     
@@ -56,65 +58,200 @@ class NetworkUtils {
         
         print("📡 Fetching restaurants from: \(url.absoluteString)")
         
+        // Add retry logic for resilience
+        let maxRetries = 3
+        var lastError: Error?
+        
+        for attempt in 1...maxRetries {
+            do {
+                print("🔄 Restaurant fetch attempt \(attempt)/\(maxRetries)")
+                
+                // Create a request with timeout settings
+                var request = URLRequest(url: url)
+                request.timeoutInterval = 15 // Shorter timeout (15 seconds instead of default 60)
+                
+                let (data, response) = try await URLSession.shared.data(for: request)
+                
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    print("❌ Invalid HTTP response")
+                    throw NetworkUtilsError.NetworkError
+                }
+                
+                if httpResponse.statusCode != 200 {
+                    print("❌ HTTP Error: \(httpResponse.statusCode)")
+                    throw NetworkUtilsError.NetworkError
+                }
+                
+                // Print the response for debugging
+                if let responseString = String(data: data, encoding: .utf8) {
+                    print("📄 Restaurant response: \(responseString)")
+                    print("📄 Response length: \(data.count) bytes")
+                    print("📄 HTTP Status: \(httpResponse.statusCode)")
+                    
+                    // Print HTTP headers
+                    print("📄 HTTP Headers:")
+                    httpResponse.allHeaderFields.forEach { key, value in
+                        print("  \(key): \(value)")
+                    }
+                }
+                
+                // Try to decode the response
+                do {
+                    let decoder = JSONDecoder()
+                    
+                    // First try to decode as RestaurantsResponse which has the {"Restaurant": [...]} structure
+                    let restaurantsResponse = try decoder.decode(RestaurantsResponse.self, from: data)
+                    print("✅ Successfully decoded \(restaurantsResponse.restaurants.count) restaurants from RestaurantsResponse")
+                    return restaurantsResponse.restaurants
+                } catch {
+                    print("❌ JSON Parsing Error: \(error)")
+                    
+                    // If that fails, try alternate approach with dynamic key decoding
+                    do {
+                        if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                           let restaurantArray = json["Restaurant"] as? [[String: Any]] {
+                            print("✅ Found Restaurant array using manual JSON parsing, attempting to decode individual restaurants")
+                            
+                            // Convert back to data
+                            let restaurantData = try JSONSerialization.data(withJSONObject: restaurantArray)
+                            
+                            // Decode array of restaurants
+                            let restaurants = try JSONDecoder().decode([Restaurant].self, from: restaurantData)
+                            print("✅ Successfully decoded \(restaurants.count) restaurants with manual approach")
+                            return restaurants
+                        } else {
+                            print("❌ Could not extract Restaurant array from JSON")
+                            throw NetworkUtilsError.JSONParsingError
+                        }
+                    } catch {
+                        print("❌ Alternative parsing also failed: \(error)")
+                        throw NetworkUtilsError.JSONParsingError
+                    }
+                }
+            } catch {
+                lastError = error
+                print("❌ Restaurant fetch attempt \(attempt) failed: \(error.localizedDescription)")
+                
+                // Wait before retrying (exponential backoff)
+                if attempt < maxRetries {
+                    let delay = Double(attempt) * 0.5 // 0.5s, 1s, 1.5s
+                    print("⏱️ Waiting \(delay)s before retry...")
+                    try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                }
+            }
+        }
+        
+        // Try alternate endpoint format (without /admin/)
+        print("🔄 Trying fallback URL for restaurants...")
+        let fallbackUrlString = "https://qskipper.com/api/get_All_Restaurant"
+        
+        guard let fallbackUrl = URL(string: fallbackUrlString) else {
+            print("❌ Failed to create fallback URL")
+            throw lastError ?? NetworkUtilsError.NetworkError
+        }
+        
         do {
-            let (data, response) = try await URLSession.shared.data(from: url)
+            print("📡 Trying fallback URL: \(fallbackUrlString)")
+            let (data, response) = try await URLSession.shared.data(from: fallbackUrl)
             
             guard let httpResponse = response as? HTTPURLResponse else {
-                print("❌ Invalid HTTP response")
+                print("❌ Invalid HTTP response from fallback URL")
                 throw NetworkUtilsError.NetworkError
             }
             
             if httpResponse.statusCode != 200 {
-                print("❌ HTTP Error: \(httpResponse.statusCode)")
+                print("❌ HTTP Error from fallback URL: \(httpResponse.statusCode)")
                 throw NetworkUtilsError.NetworkError
             }
             
-            // Print the response for debugging
-            if let responseString = String(data: data, encoding: .utf8) {
-                print("📄 Restaurant response: \(responseString.prefix(200))...")
-            }
-            
-            // Try to decode the response
+            // Try to decode with the same approaches as before
             do {
                 let decoder = JSONDecoder()
                 
-                // First try to decode as RestaurantsResponse which has the {"Restaurant": [...]} structure
-                let restaurantsResponse = try decoder.decode(RestaurantsResponse.self, from: data)
-                print("✅ Successfully decoded \(restaurantsResponse.restaurants.count) restaurants from RestaurantsResponse")
-                return restaurantsResponse.restaurants
-            } catch {
-                print("❌ JSON Parsing Error: \(error)")
-                
-                // If that fails, try alternate approach with dynamic key decoding
-                do {
-                    if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                       let restaurantArray = json["Restaurant"] as? [[String: Any]] {
-                        print("✅ Found Restaurant array using manual JSON parsing, attempting to decode individual restaurants")
-                        
-                        // Convert back to data
-                        let restaurantData = try JSONSerialization.data(withJSONObject: restaurantArray)
-                        
-                        // Decode array of restaurants
-                        let restaurants = try JSONDecoder().decode([Restaurant].self, from: restaurantData)
-                        print("✅ Successfully decoded \(restaurants.count) restaurants with manual approach")
-                        return restaurants
-                    } else {
-                        print("❌ Could not extract Restaurant array from JSON")
-                        throw NetworkUtilsError.JSONParsingError
-                    }
-                } catch {
-                    print("❌ Alternative parsing also failed: \(error)")
-                    throw NetworkUtilsError.JSONParsingError
+                // First try RestaurantsResponse
+                if let restaurantsResponse = try? decoder.decode(RestaurantsResponse.self, from: data) {
+                    print("✅ Successfully decoded \(restaurantsResponse.restaurants.count) restaurants from fallback URL")
+                    return restaurantsResponse.restaurants
                 }
+                
+                // Try manual approach with Restaurant key
+                if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let restaurantArray = json["Restaurant"] as? [[String: Any]] {
+                    
+                    let restaurantData = try JSONSerialization.data(withJSONObject: restaurantArray)
+                    let restaurants = try JSONDecoder().decode([Restaurant].self, from: restaurantData)
+                    print("✅ Successfully decoded \(restaurants.count) restaurants from fallback URL with manual approach")
+                    return restaurants
+                }
+                
+                // Try direct array decoding as last resort
+                if let restaurants = try? decoder.decode([Restaurant].self, from: data) {
+                    print("✅ Successfully decoded \(restaurants.count) restaurants as direct array from fallback URL")
+                    return restaurants
+                }
+                
+                print("❌ All fallback parsing approaches failed")
+                throw NetworkUtilsError.JSONParsingError
+            } catch {
+                print("❌ Fallback parsing failed: \(error)")
+                throw NetworkUtilsError.JSONParsingError
             }
-            
         } catch {
-            print("❌ Network request failed: \(error)")
-            throw NetworkUtilsError.NetworkError
+            print("❌ Fallback URL failed: \(error)")
+            
+            // Try using the backup hardcoded URL (render.com server)
+            let backupUrl = URL(string: "https://queueskipperbackend.onrender.com/get_All_Restaurant")!
+            print("🔄 Trying backup URL: \(backupUrl.absoluteString)")
+            
+            do {
+                let (data, response) = try await URLSession.shared.data(from: backupUrl)
+                
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    print("❌ Invalid HTTP response from backup URL")
+                    throw NetworkUtilsError.NetworkError
+                }
+                
+                if httpResponse.statusCode != 200 {
+                    print("❌ HTTP Error from backup URL: \(httpResponse.statusCode)")
+                    throw NetworkUtilsError.NetworkError
+                }
+                
+                // Try all decoding approaches
+                if let restaurantsResponse = try? JSONDecoder().decode(RestaurantsResponse.self, from: data) {
+                    print("✅ Successfully decoded \(restaurantsResponse.restaurants.count) restaurants from backup URL")
+                    return restaurantsResponse.restaurants
+                }
+                
+                if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let restaurantArray = json["Restaurant"] as? [[String: Any]] {
+                    
+                    let restaurantData = try JSONSerialization.data(withJSONObject: restaurantArray)
+                    if let restaurants = try? JSONDecoder().decode([Restaurant].self, from: restaurantData) {
+                        print("✅ Successfully decoded \(restaurants.count) restaurants from backup URL with manual approach")
+                        return restaurants
+                    }
+                }
+                
+                // Last resort - try direct array
+                if let restaurants = try? JSONDecoder().decode([Restaurant].self, from: data) {
+                    print("✅ Successfully decoded \(restaurants.count) restaurants as direct array from backup URL")
+                    return restaurants
+                }
+                
+                // If all attempts failed, throw the error
+                print("❌ Backup URL also failed: \(error)")
+                throw lastError ?? NetworkUtilsError.RestaurantNotFound
+            }
         }
     }
     
     func fetchRestaurantImage(photoId: String) async throws -> UIImage {
+        // Check image cache first
+        if let cachedImage = ImageCache.shared.getImage(forKey: "restaurant_\(photoId)") {
+            print("✅ Using cached restaurant image for ID: \(photoId)")
+            return cachedImage
+        }
+        
         // Use the correct endpoint structure
         let urlString = "\(baseURl.absoluteString)get_restaurant_photo/\(photoId)"
         
@@ -125,30 +262,116 @@ class NetworkUtils {
             throw NetworkUtilsError.NetworkError
         }
         
+        // Add retry logic for network resilience
+        let maxRetries = 3
+        var lastError: Error?
+        
+        for attempt in 1...maxRetries {
+            do {
+                print("🔄 Restaurant image fetch attempt \(attempt)/\(maxRetries) for ID: \(photoId)")
+                
+                // Create a request with timeout settings
+                var request = URLRequest(url: url)
+                request.timeoutInterval = 15 // Shorter timeout (15 seconds instead of default 60)
+                
+                let (data, response) = try await URLSession.shared.data(for: request)
+                
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    print("❌ Invalid HTTP response")
+                    throw NetworkUtilsError.NetworkError
+                }
+                
+                if httpResponse.statusCode != 200 {
+                    print("❌ HTTP Error: \(httpResponse.statusCode)")
+                    throw NetworkUtilsError.ImageNotFound
+                }
+                
+                guard let image = UIImage(data: data) else {
+                    print("❌ Could not create image from data")
+                    throw NetworkUtilsError.ImageNotFound
+                }
+                
+                // Cache the loaded image
+                ImageCache.shared.setImage(image, forKey: "restaurant_\(photoId)")
+                
+                print("✅ Successfully loaded restaurant image")
+                return image
+                
+            } catch {
+                lastError = error
+                print("❌ Attempt \(attempt) failed: \(error.localizedDescription)")
+                
+                // Wait before retrying (exponential backoff)
+                if attempt < maxRetries {
+                    let delay = Double(attempt) * 0.5 // 0.5s, 1s, 1.5s
+                    print("⏱️ Waiting \(delay)s before retry...")
+                    try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                }
+            }
+        }
+        
+        // All attempts failed, try a fallback solution
+        print("🔄 Trying fallback solution after \(maxRetries) failed attempts...")
+        
+        // Try alternate endpoint format (without /admin/)
+        let fallbackUrlString = "https://qskipper.com/api/get_restaurant_photo/\(photoId)"
+        
+        guard let fallbackUrl = URL(string: fallbackUrlString) else {
+            print("❌ Failed to create fallback URL")
+            throw lastError ?? NetworkUtilsError.ImageNotFound
+        }
+        
         do {
-            let (data, response) = try await URLSession.shared.data(from: url)
+            print("📡 Trying fallback URL: \(fallbackUrlString)")
+            let (data, response) = try await URLSession.shared.data(from: fallbackUrl)
             
             guard let httpResponse = response as? HTTPURLResponse else {
-                print("❌ Invalid HTTP response")
+                print("❌ Invalid HTTP response from fallback URL")
                 throw NetworkUtilsError.NetworkError
             }
             
             if httpResponse.statusCode != 200 {
-                print("❌ HTTP Error: \(httpResponse.statusCode)")
+                print("❌ HTTP Error from fallback URL: \(httpResponse.statusCode)")
                 throw NetworkUtilsError.ImageNotFound
             }
             
             guard let image = UIImage(data: data) else {
-                print("❌ Could not create image from data")
+                print("❌ Could not create image from fallback data")
                 throw NetworkUtilsError.ImageNotFound
             }
             
-            print("✅ Successfully loaded restaurant image")
+            // Cache the loaded image
+            ImageCache.shared.setImage(image, forKey: "restaurant_\(photoId)")
+            
+            print("✅ Successfully loaded restaurant image from fallback URL")
             return image
             
         } catch {
-            print("❌ Failed to load restaurant image: \(error)")
-            throw NetworkUtilsError.ImageNotFound
+            print("❌ Failed to load restaurant image (including fallback): \(error)")
+            
+            // Return a placeholder image instead of throwing an error
+            if let placeholderImage = UIImage(systemName: "fork.knife") {
+                print("⚠️ Using system placeholder image")
+                return placeholderImage
+            }
+            
+            // If even the system placeholder fails, create a simple colored image
+            let renderer = UIGraphicsImageRenderer(size: CGSize(width: 100, height: 100))
+            let placeholderImage = renderer.image { ctx in
+                let gradient = CGGradient(
+                    colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                    colors: [UIColor(red: 1, green: 0.6, blue: 0.4, alpha: 1).cgColor, 
+                             UIColor(red: 1, green: 0.4, blue: 0.4, alpha: 1).cgColor] as CFArray,
+                    locations: [0, 1]
+                )!
+                
+                let startPoint = CGPoint(x: 0, y: 0)
+                let endPoint = CGPoint(x: 100, y: 100)
+                ctx.cgContext.drawLinearGradient(gradient, start: startPoint, end: endPoint, options: [])
+            }
+            
+            print("⚠️ Using generated placeholder image")
+            return placeholderImage
         }
     }
     
@@ -266,6 +489,12 @@ class NetworkUtils {
     }
     
     func fetchProductImage(photoId: String) async throws -> UIImage {
+        // Check image cache first
+        if let cachedImage = ImageCache.shared.getImage(forKey: "product_\(photoId)") {
+            print("✅ Using cached product image for ID: \(photoId)")
+            return cachedImage
+        }
+        
         // Use the correct endpoint structure
         let urlString = "\(baseURl.absoluteString)get_product_photo/\(photoId)"
         
@@ -276,30 +505,108 @@ class NetworkUtils {
             throw NetworkUtilsError.NetworkError
         }
         
+        // Add retry logic for network resilience
+        let maxRetries = 3
+        var lastError: Error?
+        
+        for attempt in 1...maxRetries {
+            do {
+                print("🔄 Image fetch attempt \(attempt)/\(maxRetries) for ID: \(photoId)")
+                
+                // Create a request with timeout settings
+                var request = URLRequest(url: url)
+                request.timeoutInterval = 15 // Shorter timeout (15 seconds instead of default 60)
+                
+                let (data, response) = try await URLSession.shared.data(for: request)
+                
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    print("❌ Invalid HTTP response")
+                    throw NetworkUtilsError.NetworkError
+                }
+                
+                if httpResponse.statusCode != 200 {
+                    print("❌ HTTP Error: \(httpResponse.statusCode)")
+                    throw NetworkUtilsError.ImageNotFound
+                }
+                
+                guard let image = UIImage(data: data) else {
+                    print("❌ Could not create image from data")
+                    throw NetworkUtilsError.ImageNotFound
+                }
+                
+                // Cache the loaded image
+                ImageCache.shared.setImage(image, forKey: "product_\(photoId)")
+                
+                print("✅ Successfully loaded product image")
+                return image
+                
+            } catch {
+                lastError = error
+                print("❌ Attempt \(attempt) failed: \(error.localizedDescription)")
+                
+                // Wait before retrying (exponential backoff)
+                if attempt < maxRetries {
+                    let delay = Double(attempt) * 0.5 // 0.5s, 1s, 1.5s
+                    print("⏱️ Waiting \(delay)s before retry...")
+                    try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                }
+            }
+        }
+        
+        // All attempts failed, try a fallback solution
+        print("🔄 Trying fallback solution after \(maxRetries) failed attempts...")
+        
+        // Try alternate endpoint format (without /admin/)
+        let fallbackUrlString = "https://qskipper.com/api/get_product_photo/\(photoId)"
+        
+        guard let fallbackUrl = URL(string: fallbackUrlString) else {
+            print("❌ Failed to create fallback URL")
+            throw lastError ?? NetworkUtilsError.ImageNotFound
+        }
+        
         do {
-            let (data, response) = try await URLSession.shared.data(from: url)
+            print("📡 Trying fallback URL: \(fallbackUrlString)")
+            let (data, response) = try await URLSession.shared.data(from: fallbackUrl)
             
             guard let httpResponse = response as? HTTPURLResponse else {
-                print("❌ Invalid HTTP response")
+                print("❌ Invalid HTTP response from fallback URL")
                 throw NetworkUtilsError.NetworkError
             }
             
             if httpResponse.statusCode != 200 {
-                print("❌ HTTP Error: \(httpResponse.statusCode)")
+                print("❌ HTTP Error from fallback URL: \(httpResponse.statusCode)")
                 throw NetworkUtilsError.ImageNotFound
             }
             
             guard let image = UIImage(data: data) else {
-                print("❌ Could not create image from data")
+                print("❌ Could not create image from fallback data")
                 throw NetworkUtilsError.ImageNotFound
             }
             
-            print("✅ Successfully loaded product image")
+            // Cache the loaded image
+            ImageCache.shared.setImage(image, forKey: "product_\(photoId)")
+            
+            print("✅ Successfully loaded product image from fallback URL")
             return image
             
         } catch {
-            print("❌ Failed to load product image: \(error)")
-            throw NetworkUtilsError.ImageNotFound
+            print("❌ Failed to load product image (including fallback): \(error)")
+            
+            // Return a placeholder image instead of throwing an error
+            if let placeholderImage = UIImage(systemName: "photo.fill") {
+                print("⚠️ Using system placeholder image")
+                return placeholderImage
+            }
+            
+            // If even the system placeholder fails, create a simple colored image
+            let renderer = UIGraphicsImageRenderer(size: CGSize(width: 100, height: 100))
+            let placeholderImage = renderer.image { ctx in
+                UIColor.systemGray4.setFill()
+                ctx.fill(CGRect(x: 0, y: 0, width: 100, height: 100))
+            }
+            
+            print("⚠️ Using generated placeholder image")
+            return placeholderImage
         }
     }
     

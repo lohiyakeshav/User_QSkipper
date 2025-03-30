@@ -7,10 +7,9 @@
 
 import SwiftUI
 
-// Add Tab enum at the top of the file
+// Update the Tab enum to remove the search option
 enum Tab {
     case home
-    case search
     case favorites
     case profile
 }
@@ -63,57 +62,78 @@ class HomeViewModel: ObservableObject {
     @Published var isLoadingTopPicks = false
     @Published var errorMessage: String? = nil
     @Published var showError = false
+    @Published var cuisines: [String] = []
     
-    private let restaurantManager = RestaurantManager.shared
+    private let networkUtils = NetworkUtils.shared
     
-    @MainActor
     func loadRestaurants() async {
-        isLoading = true
+        await MainActor.run {
+            isLoading = true
+            errorMessage = nil
+            showError = false
+        }
         
         do {
-            let fetchedRestaurants = try await restaurantManager.fetchAllRestaurants()
-            // Ensure we're on the main thread for UI updates
+            print("📡 Fetching restaurants from network: \(networkUtils.baseURl.absoluteString)get_All_Restaurant")
+            let fetchedRestaurants = try await networkUtils.fetchRestaurants()
+            
             await MainActor.run {
+                print("✅ Successfully loaded \(fetchedRestaurants.count) restaurants")
                 self.restaurants = fetchedRestaurants
-                self.isLoading = false
+                
+                // Extract unique cuisines from restaurants
+                extractCuisines()
+                isLoading = false
             }
         } catch {
-            // Ensure we're on the main thread for UI updates
+            print("❌ Error loading restaurants: \(error.localizedDescription)")
+            
             await MainActor.run {
-                self.errorMessage = error.localizedDescription
-                self.showError = true
-                self.isLoading = false
+                errorMessage = "Could not load restaurants: \(error.localizedDescription)"
+                showError = true
+                isLoading = false
             }
         }
     }
     
-    @MainActor
+    // Extract unique cuisines from restaurants
+    private func extractCuisines() {
+        var uniqueCuisines = Set<String>()
+        
+        // Collect all cuisines and filter out nil or empty values
+        for restaurant in restaurants {
+            if let cuisine = restaurant.cuisine, !cuisine.isEmpty {
+                uniqueCuisines.insert(cuisine)
+            }
+        }
+        
+        // Convert to array and sort alphabetically
+        cuisines = Array(uniqueCuisines).sorted()
+    }
+    
     func loadTopPicks() async {
-        print("🔍 Starting to load top picks")
-        isLoadingTopPicks = true
+        await MainActor.run {
+            isLoadingTopPicks = true
+            errorMessage = nil
+            showError = false
+        }
         
         do {
             print("📡 Fetching top picks from network")
-            let fetchedTopPicks = try await restaurantManager.fetchTopPicks()
+            let fetchedTopPicks = try await networkUtils.fetchTopPicks()
             
-            // Ensure we're on the main thread for UI updates
             await MainActor.run {
                 print("✅ Successfully loaded \(fetchedTopPicks.count) top picks")
                 self.topPicks = fetchedTopPicks
-                self.isLoadingTopPicks = false
-                
-                // Debug print each top pick to verify data
-                for (index, pick) in fetchedTopPicks.enumerated() {
-                    print("🍽️ Top Pick #\(index + 1): \(pick.name), Price: ₹\(pick.price), PhotoID: \(pick.photoId ?? "None")")
-                }
+                isLoadingTopPicks = false
             }
         } catch {
-            // Ensure we're on the main thread for UI updates
+            print("❌ Error loading top picks: \(error.localizedDescription)")
+            
             await MainActor.run {
-                print("❌ Error loading top picks: \(error.localizedDescription)")
-                self.errorMessage = error.localizedDescription
-                self.showError = true
-                self.isLoadingTopPicks = false
+                errorMessage = "Could not load top picks: \(error.localizedDescription)"
+                showError = true
+                isLoadingTopPicks = false
             }
         }
     }
@@ -129,7 +149,7 @@ class HomeViewModel: ObservableObject {
         return Restaurant(
             id: product.restaurantId, 
             name: "Restaurant", 
-            estimatedTime: "30-40",
+            estimatedTime: "30-40 mins",
             cuisine: product.category,
             photoId: nil,
             rating: product.rating,
@@ -148,19 +168,7 @@ struct HomeView: View {
     @State private var selectedTab: Tab = .home
     @State private var showCartSheet = false
     @State private var searchText = ""
-    @State private var selectedCategory: String? = nil
-    
-    // Keep categories as fallback but they'll be replaced with top picks
-    let categories: [(name: String, icon: String)] = [
-        ("North Indian", "🍛"),
-        ("Fast Food", "🍔"),
-        ("South Indian", "🥘"),
-        ("Gujarati", "🍲"),
-        ("Hakka", "🍜"),
-        ("Sandwich", "🥪"),
-        ("Street Food", "🌮"),
-        ("Chicken", "🍗")
-    ]
+    @State private var selectedCuisine: String? = nil
     
     var filteredRestaurants: [Restaurant] {
         var result = viewModel.restaurants
@@ -170,17 +178,9 @@ struct HomeView: View {
             result = result.filter { $0.name.lowercased().contains(searchText.lowercased()) }
         }
         
-        // Filter by selected category if one is selected
-        if let category = selectedCategory {
-            // Improve category matching by standardizing case and allowing partial matches
-            result = result.filter { 
-                let cuisine = ($0.cuisine ?? "").lowercased()
-                let searchCategory = category.lowercased()
-                
-                // Check if the cuisine contains the category or vice versa
-                return cuisine.contains(searchCategory) || 
-                       searchCategory.contains(where: { cuisine.contains(String($0)) })
-            }
+        // Filter by selected cuisine if one is selected
+        if let cuisine = selectedCuisine, !cuisine.isEmpty {
+            result = result.filter { $0.cuisine?.lowercased() == cuisine.lowercased() }
         }
         
         return result
@@ -193,11 +193,6 @@ struct HomeView: View {
                 switch selectedTab {
                 case .home:
                     homeContent
-                        .navigationBarHidden(true)
-                case .search:
-                    Text("Search Coming Soon")
-                        .font(AppFonts.title)
-                        .foregroundColor(AppColors.mediumGray)
                         .navigationBarHidden(true)
                 case .favorites:
                     FavoritesView()
@@ -222,12 +217,6 @@ struct HomeView: View {
                         }
                     }
                     
-                    TabBarItem(icon: "magnifyingglass", label: "Search", isSelected: selectedTab == .search) {
-                        withAnimation {
-                            selectedTab = .search
-                        }
-                    }
-                    
                     TabBarItem(icon: "heart.fill", label: "Favorites", isSelected: selectedTab == .favorites) {
                         withAnimation {
                             selectedTab = .favorites
@@ -236,6 +225,14 @@ struct HomeView: View {
                     
                     TabBarItem(icon: "person", label: "Profile", isSelected: selectedTab == .profile) {
                         withAnimation(.easeInOut) {
+                            // Debug when switching to profile tab
+                            if selectedTab != .profile {
+                                print("🔄 Switching to Profile tab")
+                                // Debug auth data
+                                let userName = AuthManager.shared.getCurrentUserName()
+                                let userId = AuthManager.shared.getCurrentUserId()
+                                print("👤 User data before tab switch: name=\(userName ?? "nil"), id=\(userId ?? "nil")")
+                            }
                             selectedTab = .profile
                         }
                     }
@@ -259,13 +256,22 @@ struct HomeView: View {
         .onAppear {
             loadData()
         }
+        .alert(isPresented: $viewModel.showError) {
+            Alert(
+                title: Text("Error"),
+                message: Text(viewModel.errorMessage ?? "An error occurred"),
+                dismissButton: .default(Text("OK"))
+            )
+        }
     }
     
     private func loadData() {
         Task {
             print("🔄 Loading initial data")
-            // Load restaurants first
+            
+            // Load restaurants first with a timeout
             await viewModel.loadRestaurants()
+            
             // Then load top picks
             await viewModel.loadTopPicks()
         }
@@ -305,7 +311,7 @@ struct HomeView: View {
                         
                         Spacer()
                         
-                        // Cart button (now centered better)
+                        // Cart button
                         Button {
                             showCartSheet = true
                         } label: {
@@ -330,6 +336,7 @@ struct HomeView: View {
                     }
                     .padding(.horizontal, 20)
                     .padding(.top, 15)
+                    .padding(.bottom, 10)
                     
                     // Search bar
                     HStack {
@@ -352,545 +359,465 @@ struct HomeView: View {
                 // Main scrollable content
                 VStack(spacing: 15) {
                     // TOP PICKS SECTION
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text("TOP PICKS FOR YOU")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(.gray)
-                            .padding(.horizontal, 20)
-                            .padding(.top, 10)
-                        
-                        if viewModel.isLoadingTopPicks {
-                            // Loading state for top picks
-                            HStack {
-                                Spacer()
-                                LottieWebAnimationView(
-                                    webURL: "https://lottie.host/58ead3c3-f27b-4622-8361-5dbd66a16314/sIDRKWRbM3.lottie",
-                                    loopMode: .loop,
-                                    autoplay: true
-                                )
-                                .frame(width: 100, height: 100)
-                                Spacer()
-                            }
-                        } else if viewModel.topPicks.isEmpty {
-                            // Empty state
-                            HStack {
-                                Spacer()
-                                VStack(spacing: 12) {
-                                    Image(systemName: "fork.knife")
-                                        .font(.system(size: 30))
-                                        .foregroundColor(AppColors.mediumGray)
-                                    
-                                    Text("No top picks available")
-                                        .font(AppFonts.body)
-                                        .foregroundColor(AppColors.mediumGray)
-                                    
-                                    Button {
-                                        Task {
-                                            await viewModel.loadTopPicks()
-                                        }
-                                    } label: {
-                                        Text("Refresh")
-                                            .font(AppFonts.callToAction)
-                                            .foregroundColor(AppColors.primaryGreen)
-                                            .padding(.horizontal, 20)
-                                            .padding(.vertical, 8)
-                                            .overlay(
-                                                RoundedRectangle(cornerRadius: 20)
-                                                    .stroke(AppColors.primaryGreen, lineWidth: 1)
-                                            )
-                                    }
-                                }
-                                .padding(.vertical, 25)
-                                Spacer()
-                            }
-                        } else {
-                            // Top picks horizontal scrolling list
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 15) {
-                                    ForEach(viewModel.topPicks) { product in
-                                        NavigationLink(destination: 
-                                            RestaurantDetailView(restaurant: viewModel.getRestaurantForProduct(product))
-                                                .environmentObject(orderManager)) {
-                                            TopPickItemView(product: product)
-                                                .transition(.asymmetric(
-                                                    insertion: .scale(scale: 0.8).combined(with: .opacity).animation(.spring(response: 0.4, dampingFraction: 0.7)),
-                                                    removal: .scale(scale: 0.6).combined(with: .opacity).animation(.easeOut(duration: 0.25))
-                                                ))
-                                        }
-                                    }
-                                }
-                                .padding(.horizontal, 20)
-                                .padding(.vertical, 10)
-                            }
-                        }
-                    }
+                    topPicksSection
                     
-                    // FOOD CATEGORIES - Replaced with visual category cards
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text("CATEGORIES")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(.gray)
-                            .padding(.horizontal, 20)
-                            .padding(.top, 10)
-                        
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 16) {
-                                ForEach(categories, id: \.name) { category in
-                                    Button {
-                                        // Toggle category selection
-                                        if selectedCategory == category.name {
-                                            selectedCategory = nil
-                                        } else {
-                                            selectedCategory = category.name
-                                        }
-                                    } label: {
-                                        VStack(spacing: 8) {
-                                            ZStack {
-                                                Circle()
-                                                    .fill(selectedCategory == category.name ? 
-                                                        AppColors.primaryGreen.opacity(0.1) : Color.gray.opacity(0.1))
-                                                    .frame(width: 60, height: 60)
-                                                
-                                                Text(category.icon)
-                                                    .font(.system(size: 30))
-                                            }
-                                            
-                                            Text(category.name)
-                                                .font(.system(size: 12))
-                                                .foregroundColor(selectedCategory == category.name ? 
-                                                                AppColors.primaryGreen : Color.black)
-                                                .multilineTextAlignment(.center)
-                                                .lineLimit(2)
-                                                .fixedSize(horizontal: false, vertical: true)
-                                        }
-                                        .frame(width: 70)
-                                    }
-                                }
-                            }
-                            .padding(.horizontal, 20)
-                            .padding(.vertical, 5)
-                        }
-                    }
+                    // CUISINES SECTION (Horizontal scrolling buttons)
+                    cuisinesSection
                     
-                    // ALL RESTAURANTS Text
-                    HStack {
-                        Text("ALL RESTAURANTS")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(.gray)
-                        
-                        Spacer()
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 20)
-                    
-                    // Restaurant count
-                    HStack {
-                        Text("\(filteredRestaurants.count) Restaurant(s) available for you")
-                            .font(.system(size: 12))
-                            .foregroundColor(.gray)
-                        
-                        Spacer()
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 5)
-                    
-                    // RESTAURANTS SECTION
-                    VStack(spacing: 15) {
-                        if viewModel.isLoading && viewModel.restaurants.isEmpty {
-                            // Loading state for initial load
-                            VStack(spacing: 20) {
-                                LottieWebAnimationView(
-                                    webURL: "https://lottie.host/58ead3c3-f27b-4622-8361-5dbd66a16314/sIDRKWRbM3.lottie",
-                                    loopMode: .loop,
-                                    autoplay: true
-                                )
-                                .frame(width: 120, height: 120)
-                                
-                                Text("Loading restaurants...")
-                                    .font(AppFonts.body)
-                                    .foregroundColor(AppColors.mediumGray)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.top, 30)
-                        } else if filteredRestaurants.isEmpty {
-                            // Empty state - no restaurants match filter
-                            VStack(spacing: 15) {
-                                Image(systemName: "fork.knife")
-                                    .font(.system(size: 40))
-                                    .foregroundColor(AppColors.mediumGray)
-                                    .padding(.top, 40)
-                                
-                                Text(selectedCategory != nil ? 
-                                     "No \(selectedCategory!) restaurants found" : 
-                                     "No restaurants found matching '\(searchText)'")
-                                    .font(AppFonts.body)
-                                    .foregroundColor(AppColors.mediumGray)
-                                    .multilineTextAlignment(.center)
-                                
-                                if selectedCategory != nil || !searchText.isEmpty {
-                                    Button {
-                                        // Reset filters
-                                        selectedCategory = nil
-                                        searchText = ""
-                                    } label: {
-                                        Text("Clear filters")
-                                            .font(AppFonts.callToAction)
-                                            .foregroundColor(.white)
-                                            .padding(.horizontal, 20)
-                                            .padding(.vertical, 10)
-                                            .background(AppColors.primaryGreen)
-                                            .cornerRadius(20)
-                                            .padding(.top, 10)
-                                    }
-                                }
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.horizontal, 20)
-                        } else {
-                            // Restaurant list
-                            ForEach(filteredRestaurants) { restaurant in
-                                NavigationLink(destination: RestaurantDetailView(restaurant: restaurant).environmentObject(orderManager)) {
-                                    RestaurantItemView(restaurant: restaurant)
-                                        .foregroundColor(.primary)
-                                }
-                            }
-                        }
-                    }
-                    .padding(.top, 10)
-                    .padding(.bottom, 100) // Add extra padding for the tab bar
+                    // ALL RESTAURANTS SECTION
+                    restaurantsSection
                 }
             }
+            .padding(.bottom, 90) // Extra padding for tab bar
         }
+        .background(Color.white)
+        // Pull to refresh
         .refreshable {
-            Task {
-                await viewModel.loadRestaurants()
-                await viewModel.loadTopPicks()
-            }
+            await loadData()
+        }
+        .safeAreaInset(edge: .top) {
+            Color.clear.frame(height: 0)
+        }
+        .safeAreaInset(edge: .bottom) {
+            Color.clear.frame(height: 1)
         }
     }
-}
-
-struct TopPickItemView: View {
-    @EnvironmentObject var favoriteManager: FavoriteManager
-    @EnvironmentObject var orderManager: OrderManager
-    let product: Product
     
-    var body: some View {
-        VStack(alignment: .leading) {
-            // Product Image - using ProductImageView to load real images
-            ZStack(alignment: .topTrailing) {
-                ProductImageView(photoId: product.photoId, name: product.name, category: product.category)
-                    .frame(width: 150, height: 100)
-                    .clipped()
-                    .cornerRadius(10)
-                
-                // Favorite button
-                Button {
-                    favoriteManager.toggleFavorite(product)
-                } label: {
-                    Image(systemName: favoriteManager.isFavorite(product) ? "heart.fill" : "heart")
-                        .foregroundColor(favoriteManager.isFavorite(product) ? .red : .white)
-                        .padding(6)
-                        .background(Circle().fill(Color.black.opacity(0.3)))
-                        .font(.system(size: 12))
+    // Top Picks Section
+    private var topPicksSection: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text("TOP PICKS FOR YOU")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(.gray)
+                .padding(.horizontal, 20)
+                .padding(.top, 10)
+            
+            if viewModel.isLoadingTopPicks {
+                // Loading state
+                VStack {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: AppColors.primaryGreen))
+                        .scaleEffect(1.5)
+                        .frame(height: 160)
                 }
-                .padding(8)
-            }
-            
-            // Product Info
-            Text(product.name)
-                .font(.system(size: 14, weight: .medium))
-                .foregroundColor(AppColors.darkGray)
-                .lineLimit(1)
-            
-            HStack {
-                Text("₹\(String(format: "%.0f", product.price))")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundColor(AppColors.primaryGreen)
-                
-                Spacer()
-                
-                HStack(spacing: 2) {
-                    Image(systemName: "star.fill")
-                        .foregroundColor(.yellow)
-                        .font(.system(size: 12))
+                .frame(maxWidth: .infinity)
+                .background(Color.white)
+            } else if viewModel.topPicks.isEmpty {
+                // Empty state
+                VStack {
+                    Image(systemName: "fork.knife")
+                        .font(.system(size: 40))
+                        .foregroundColor(AppColors.primaryGreen.opacity(0.5))
+                        .padding(.bottom, 10)
                     
-                    Text(String(format: "%.1f", product.rating))
-                        .font(.system(size: 12))
+                    Text("No top picks available")
+                        .font(.system(size: 16, weight: .medium))
                         .foregroundColor(.gray)
                 }
+                .frame(maxWidth: .infinity)
+                .frame(height: 160)
+                .background(Color.white)
+            } else {
+                // Horizontal scrolling list of top picks
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 15) {
+                        ForEach(viewModel.topPicks) { product in
+                            TopPickCard(product: product, restaurant: viewModel.getRestaurantForProduct(product))
+                                .environmentObject(orderManager)
+                                .environmentObject(favoriteManager)
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 10)
+                }
             }
         }
-        .frame(width: 150)
-        .padding(8)
-        .background(Color.white)
-        .cornerRadius(12)
-        .shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
+    }
+    
+    // Cuisines Section
+    private var cuisinesSection: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text("CUISINES")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(.gray)
+                .padding(.horizontal, 20)
+                .padding(.top, 5)
+            
+            if viewModel.cuisines.isEmpty {
+                if viewModel.isLoading {
+                    // Loading state
+                    HStack {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: AppColors.primaryGreen))
+                            .padding(.vertical, 15)
+                    }
+                    .frame(maxWidth: .infinity)
+                } else {
+                    // Empty state
+                    Text("No cuisines available")
+                        .font(.system(size: 14))
+                        .foregroundColor(.gray)
+                        .padding(.vertical, 15)
+                        .frame(maxWidth: .infinity)
+                }
+            } else {
+                // Horizontally scrolling cuisine buttons
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        // "All" button
+                        CuisineButton(
+                            cuisine: "All",
+                            isSelected: selectedCuisine == nil,
+                            action: {
+                                selectedCuisine = nil
+                            }
+                        )
+                        
+                        // Cuisine filter buttons
+                        ForEach(viewModel.cuisines, id: \.self) { cuisine in
+                            CuisineButton(
+                                cuisine: cuisine,
+                                isSelected: selectedCuisine == cuisine,
+                                action: {
+                                    selectedCuisine = cuisine
+                                }
+                            )
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 10)
+                }
+            }
+        }
+    }
+    
+    // All Restaurants Section
+    private var restaurantsSection: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text("ALL RESTAURANTS")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(.gray)
+                .padding(.horizontal, 20)
+                .padding(.top, 5)
+            
+            if viewModel.isLoading {
+                // Loading state
+                VStack(spacing: 20) {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: AppColors.primaryGreen))
+                        .scaleEffect(1.5)
+                    
+                    Text("Loading restaurants...")
+                        .font(.system(size: 16))
+                        .foregroundColor(.gray)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 60)
+            } else if filteredRestaurants.isEmpty {
+                // Empty state
+                VStack(spacing: 15) {
+                    Image(systemName: "building.2")
+                        .font(.system(size: 40))
+                        .foregroundColor(AppColors.primaryGreen.opacity(0.5))
+                    
+                    Text("\(selectedCuisine != nil ? "No \(selectedCuisine!) restaurants" : "No restaurants") available")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(.gray)
+                        .multilineTextAlignment(.center)
+                    
+                    if selectedCuisine != nil {
+                        Button {
+                            selectedCuisine = nil
+                        } label: {
+                            Text("Show all restaurants")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundColor(AppColors.primaryGreen)
+                        }
+                        .padding(.top, 5)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 40)
+            } else {
+                // Restaurant count
+                Text("\(filteredRestaurants.count) Restaurant\(filteredRestaurants.count == 1 ? "" : "s") available for you")
+                    .font(.system(size: 14))
+                    .foregroundColor(.gray)
+                    .padding(.horizontal, 20)
+                    .padding(.top, 5)
+                
+                // List of restaurants
+                LazyVStack(spacing: 15) {
+                    ForEach(filteredRestaurants) { restaurant in
+                        RestaurantCard(restaurant: restaurant)
+                            .padding(.horizontal, 20)
+                    }
+                }
+                .padding(.vertical, 10)
+                .padding(.bottom, 80) // Extra padding for tab bar
+            }
+        }
     }
 }
 
-struct RestaurantItemView: View {
-    let restaurant: Restaurant
+// Helper view for cuisine filter buttons
+struct CuisineButton: View {
+    let cuisine: String
+    let isSelected: Bool
+    let action: () -> Void
+    
+    // Get appropriate emoji for cuisine
+    private var emoji: String {
+        let cuisine = cuisine.lowercased()
+        
+        if cuisine == "all" {
+            return "🍽️"
+        } else if cuisine.contains("pizza") {
+            return "🍕"
+        } else if cuisine.contains("burger") || cuisine.contains("fast food") {
+            return "🍔"
+        } else if cuisine.contains("dessert") || cuisine.contains("sweet") {
+            return "🍰"
+        } else if cuisine.contains("drink") || cuisine.contains("beverage") {
+            return "🥤"
+        } else if cuisine.contains("coffee") {
+            return "☕"
+        } else if cuisine.contains("breakfast") {
+            return "🍳"
+        } else if cuisine.contains("lunch") {
+            return "🍱"
+        } else if cuisine.contains("dinner") {
+            return "🍲"
+        } else if cuisine.contains("vegetarian") || cuisine.contains("veg") || cuisine.contains("gujarati") {
+            return "🥗"
+        } else if cuisine.contains("meat") || cuisine.contains("chicken") {
+            return "🍗"
+        } else if cuisine.contains("seafood") || cuisine.contains("fish") {
+            return "🐟"
+        } else if cuisine.contains("italian") {
+            return "🍝"
+        } else if cuisine.contains("chinese") || cuisine.contains("hakka") {
+            return "🥢"
+        } else if cuisine.contains("indian") || cuisine.contains("north indian") {
+            return "🍛"
+        } else if cuisine.contains("south indian") {
+            return "🥘"
+        } else if cuisine.contains("mexican") {
+            return "🌮"
+        } else if cuisine.contains("japanese") {
+            return "🍱"
+        } else if cuisine.contains("thai") {
+            return "🥡"
+        } else if cuisine.contains("sandwich") {
+            return "🥪"
+        } else if cuisine.contains("street food") {
+            return "🌭"
+        } else {
+            return "🍴"
+        }
+    }
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Restaurant Image
-            ZStack(alignment: .bottomLeading) {
-                // Always use RestaurantImageView for consistency, passing both photoId and name
-                RestaurantImageView(photoId: restaurant.photoId, name: restaurant.name)
-                    .frame(height: 150)
-                    .clipped()
-                
-                // Cuisine pill - safely handle optional cuisine
-                if let cuisine = restaurant.cuisine, !cuisine.isEmpty {
-                    Text(cuisine)
-                        .font(.system(size: 10, weight: .medium))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(Color.white)
-                        .cornerRadius(15)
-                        .padding(10)
-                        .shadow(color: Color.black.opacity(0.1), radius: 2, x: 0, y: 1)
+        Button(action: action) {
+            VStack(spacing: 8) {
+                // Circular emoji background
+                ZStack {
+                    Circle()
+                        .fill(isSelected ? AppColors.primaryGreen.opacity(0.1) : Color.gray.opacity(0.1))
+                        .frame(width: 60, height: 60)
+                        .overlay(
+                            Circle()
+                                .stroke(isSelected ? AppColors.primaryGreen : Color.clear, lineWidth: 1)
+                        )
+                        .shadow(color: Color.black.opacity(0.05), radius: 2, y: 1)
+                    
+                    // Emoji
+                    Text(emoji)
+                        .font(.system(size: 30))
                 }
+                
+                // Text below emoji
+                Text(cuisine.prefix(1).uppercased() + cuisine.dropFirst())
+                    .font(.system(size: 12, weight: isSelected ? .medium : .regular))
+                    .foregroundColor(isSelected ? AppColors.primaryGreen : .black)
+                    .lineLimit(1)
+                    .frame(width: 70)
             }
-            .frame(height: 150)
-            
-            VStack(alignment: .leading, spacing: 8) {
-                // Name and rating
+            .padding(.horizontal, 5)
+        }
+    }
+}
+
+// TabBar Item
+struct TabBarItem: View {
+    let icon: String
+    let label: String
+    let isSelected: Bool
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: 20))
+                    .foregroundColor(isSelected ? AppColors.primaryGreen : .gray)
+                
+                Text(label)
+                    .font(.system(size: 12))
+                    .foregroundColor(isSelected ? AppColors.primaryGreen : .gray)
+            }
+            .frame(maxWidth: .infinity)
+        }
+    }
+}
+
+// MARK: - Card Components
+
+// TopPickCard - Card component for displaying a product in the top picks section
+struct TopPickCard: View {
+    let product: Product
+    let restaurant: Restaurant
+    @EnvironmentObject var orderManager: OrderManager
+    @EnvironmentObject var favoriteManager: FavoriteManager
+    
+    var body: some View {
+        NavigationLink(destination: RestaurantDetailView(restaurant: restaurant)) {
+            VStack(alignment: .leading) {
+                // Product Image
+                ZStack(alignment: .topTrailing) {
+                    ProductImageView(photoId: product.photoId, name: product.name, category: product.category)
+                        .frame(width: 150, height: 100)
+                        .clipped()
+                        .cornerRadius(10)
+                    
+                    // Favorite button
+                    Button {
+                        favoriteManager.toggleFavorite(product)
+                    } label: {
+                        Image(systemName: favoriteManager.isFavorite(product) ? "heart.fill" : "heart")
+                            .foregroundColor(favoriteManager.isFavorite(product) ? .red : .white)
+                            .padding(6)
+                            .background(Circle().fill(Color.black.opacity(0.3)))
+                            .font(.system(size: 12))
+                    }
+                    .padding(8)
+                }
+                
+                // Product Info
+                Text(product.name)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(.black)
+                    .lineLimit(1)
+                
                 HStack {
-                    Text(restaurant.name)
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(.black)
-                        .lineLimit(1)
+                    // Price
+                    Text("₹\(String(format: "%.0f", product.price))")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(AppColors.primaryGreen)
                     
                     Spacer()
                     
                     // Rating
                     HStack(spacing: 2) {
                         Image(systemName: "star.fill")
-                            .font(.system(size: 12))
                             .foregroundColor(.yellow)
+                            .font(.system(size: 12))
                         
-                        Text(String(format: "%.1f", restaurant.rating))
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(.black)
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color.gray.opacity(0.1))
-                    .cornerRadius(15)
-                }
-                
-                // Location
-                Text(restaurant.location)
-                    .font(.system(size: 12))
-                    .foregroundColor(.gray)
-                    .lineLimit(1)
-                
-                // Estimated time - safely handle optional estimatedTime
-                HStack {
-                    Image(systemName: "clock")
-                        .font(.system(size: 12))
-                        .foregroundColor(AppColors.primaryGreen)
-                    
-                    // Handle optional estimatedTime with proper formatting
-                    Text("\(restaurant.estimatedTime ?? "30-40") mins")
-                        .font(.system(size: 12))
-                        .foregroundColor(AppColors.primaryGreen)
-                }
-            }
-            .padding(.horizontal, 15)
-            .padding(.vertical, 12)
-        }
-        .background(Color.white)
-        .cornerRadius(10)
-        .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
-        .padding(.horizontal, 20)
-    }
-    
-    // Reusable placeholder for restaurant images
-    private var restaurantPlaceholder: some View {
-        Rectangle()
-            .fill(Color.gray.opacity(0.2))
-            .frame(height: 150)
-            .overlay(
-                VStack {
-                    Image(systemName: "photo")
-                        .font(.system(size: 30))
-                        .foregroundColor(.gray)
-                    if !restaurant.name.isEmpty {
-                        Text(restaurant.name.prefix(1).uppercased())
-                            .font(.system(size: 22, weight: .bold))
+                        Text(String(format: "%.1f", product.rating))
+                            .font(.system(size: 12))
                             .foregroundColor(.gray)
-                            .padding(.top, 5)
                     }
                 }
-            )
-    }
-}
-
-struct TabBarItem: View {
-    let icon: String
-    let label: String
-    let isSelected: Bool
-    var action: (() -> Void)? = nil
-    
-    @State private var isPressed = false
-    
-    var body: some View {
-        Button {
-            // Add haptic feedback
-            let impactFeedback = UIImpactFeedbackGenerator(style: .light)
-            impactFeedback.impactOccurred()
-            
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
-                isPressed = true
             }
-            
-            // Reset the animation state after a short delay
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
-                    isPressed = false
-                }
-            }
-            
-            action?()
-        } label: {
-            VStack(spacing: 4) {
-                Image(systemName: icon)
-                    .font(.system(size: 22))
-                    .foregroundColor(isSelected ? AppColors.primaryGreen : Color.gray)
-                    .scaleEffect(isSelected ? (isPressed ? 0.9 : 1.1) : 1.0)
-                    .animation(isSelected ? .spring(response: 0.3, dampingFraction: 0.6) : .none, value: isPressed)
-                
-                Text(label)
-                    .font(.system(size: 10))
-                    .foregroundColor(isSelected ? AppColors.primaryGreen : Color.gray)
-            }
-            .frame(maxWidth: .infinity)
-            .contentShape(Rectangle())
+            .frame(width: 150)
+            .padding(8)
+            .background(Color.white)
+            .cornerRadius(12)
+            .shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
         }
+        .buttonStyle(PlainButtonStyle()) // Fix navigation link appearance
     }
 }
 
-// Favorites View
-struct FavoritesView: View {
-    @EnvironmentObject var favoriteManager: FavoriteManager
-    @EnvironmentObject var orderManager: OrderManager
+// RestaurantCard - Card component for displaying a restaurant in the all restaurants section
+struct RestaurantCard: View {
+    let restaurant: Restaurant
     
     var body: some View {
-        NavigationView {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    Text("Your Favorite Dishes")
-                        .font(AppFonts.title)
-                        .padding(.horizontal, 20)
-                        .padding(.top, 20)
+        NavigationLink(destination: RestaurantDetailView(restaurant: restaurant)) {
+            VStack(alignment: .leading, spacing: 0) {
+                // Restaurant Image
+                ZStack(alignment: .bottomLeading) {
+                    RestaurantImageView(photoId: restaurant.photoId, name: restaurant.name)
+                        .frame(height: 150)
+                        .clipped()
                     
-                    if favoriteManager.favoriteDishes.isEmpty {
-                        VStack(spacing: 20) {
-                            Spacer()
-                            LottieWebAnimationView(
-                                webURL: "https://lottie.host/20b64309-9089-4464-a4c5-f9a1ab3dbba1/l5b3WsrLuK.lottie",
-                                loopMode: .loop,
-                                autoplay: true
-                            )
-                            .frame(width: 200, height: 200)
-                            Text("No favorite dishes yet")
-                                .font(AppFonts.subtitle)
-                                .foregroundColor(AppColors.mediumGray)
-                            Text("Add some dishes to your favorites from the menu")
-                                .font(AppFonts.body)
-                                .foregroundColor(AppColors.mediumGray)
-                                .multilineTextAlignment(.center)
-                                .padding(.horizontal, 40)
-                            Spacer()
-                        }
-                        .frame(height: 400)
-                    } else {
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 16)], spacing: 16) {
-                            ForEach(favoriteManager.favoriteDishes) { product in
-                                FavoriteProductCard(product: product)
-                            }
-                        }
-                        .padding(.horizontal, 20)
-                        .padding(.bottom, 100) // Extra space for tab bar
+                    // Cuisine pill - safely handle optional cuisine
+                    if let cuisine = restaurant.cuisine, !cuisine.isEmpty {
+                        Text(cuisine)
+                            .font(.system(size: 10, weight: .medium))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(Color.white)
+                            .cornerRadius(15)
+                            .padding(10)
+                            .shadow(color: Color.black.opacity(0.1), radius: 2, x: 0, y: 1)
                     }
                 }
-            }
-            .navigationTitle("Favorites")
-            .navigationBarTitleDisplayMode(.inline)
-        }
-    }
-}
-
-struct FavoriteProductCard: View {
-    @EnvironmentObject var favoriteManager: FavoriteManager
-    @EnvironmentObject var orderManager: OrderManager
-    @State private var showAddedToCart = false
-    let product: Product
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // Product Image
-            ZStack(alignment: .topTrailing) {
-                ProductImageView(photoId: product.photoId, name: product.name, category: product.category)
-                    .frame(height: 120)
-                    .cornerRadius(12)
+                .frame(height: 150)
                 
-                // Favorite button
-                Button {
-                    withAnimation {
-                        favoriteManager.toggleFavorite(product)
-                    }
-                } label: {
-                    Image(systemName: "heart.fill")
-                        .foregroundColor(.red)
-                        .padding(6)
-                        .background(Circle().fill(Color.black.opacity(0.3)))
-                }
-                .padding(8)
-            }
-            
-            VStack(alignment: .leading, spacing: 4) {
-                Text(product.name)
-                    .font(.system(size: 14, weight: .medium))
-                    .lineLimit(1)
-                
-                Text("₹\(String(format: "%.0f", product.price))")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundColor(AppColors.primaryGreen)
-                
-                // Add to cart button
-                Button {
-                    orderManager.addToCart(product: product)
-                    withAnimation {
-                        showAddedToCart = true
-                    }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                        withAnimation {
-                            showAddedToCart = false
-                        }
-                    }
-                } label: {
+                VStack(alignment: .leading, spacing: 8) {
+                    // Name and rating
                     HStack {
+                        Text(restaurant.name)
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.black)
+                            .lineLimit(1)
+                        
                         Spacer()
-                        Text(showAddedToCart ? "Added!" : "Add to Cart")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(.white)
-                        Spacer()
+                        
+                        // Rating
+                        HStack(spacing: 2) {
+                            Image(systemName: "star.fill")
+                                .font(.system(size: 12))
+                                .foregroundColor(.yellow)
+                            
+                            Text(String(format: "%.1f", restaurant.rating))
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundColor(.black)
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.gray.opacity(0.1))
+                        .cornerRadius(15)
                     }
-                    .padding(.vertical, 6)
-                    .background(showAddedToCart ? Color.green : AppColors.primaryGreen)
-                    .cornerRadius(8)
+                    
+                    // Location
+                    Text(restaurant.location)
+                        .font(.system(size: 12))
+                        .foregroundColor(.gray)
+                        .lineLimit(1)
+                    
+                    // Estimated time - safely handle optional estimatedTime
+                    HStack {
+                        Image(systemName: "clock")
+                            .font(.system(size: 12))
+                            .foregroundColor(AppColors.primaryGreen)
+                        
+                        // Handle optional estimatedTime with proper formatting
+                        Text("\(restaurant.estimatedTime ?? "30-40") mins")
+                            .font(.system(size: 12))
+                            .foregroundColor(AppColors.primaryGreen)
+                    }
                 }
+                .padding(.horizontal, 15)
+                .padding(.vertical, 12)
             }
-            .padding(.horizontal, 8)
-            .padding(.bottom, 8)
+            .background(Color.white)
+            .cornerRadius(10)
+            .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
         }
-        .background(Color.white)
-        .cornerRadius(12)
-        .shadow(color: Color.black.opacity(0.1), radius: 4, y: 2)
+        .buttonStyle(PlainButtonStyle()) // Fix navigation link appearance
     }
 }
 
