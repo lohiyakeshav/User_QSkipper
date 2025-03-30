@@ -157,7 +157,7 @@ struct RegisterView: View {
                             .font(.system(size: 16, weight: .medium))
                             .foregroundColor(.black.opacity(0.8))
                         
-                        TextField("Keshav.lohiyas@gmail.com", text: $viewModel.email)
+                        TextField("Enter your email address", text: $viewModel.email)
                             .font(.system(size: 16))
                             .padding(.vertical, 16)
                             .padding(.horizontal, 12)
@@ -178,7 +178,7 @@ struct RegisterView: View {
                             .font(.system(size: 16, weight: .medium))
                             .foregroundColor(.black.opacity(0.8))
                         
-                        TextField("Keshav Lohiya", text: $viewModel.name)
+                        TextField("Enter your full name", text: $viewModel.name)
                             .font(.system(size: 16))
                             .padding(.vertical, 16)
                             .padding(.horizontal, 12)
@@ -239,55 +239,6 @@ struct RegisterView: View {
                     .padding(.top, 20)
                     .opacity(animateContent ? 1 : 0)
                     .offset(y: animateContent ? 0 : 10)
-                    
-                    // Or sign in with
-                    HStack {
-                        VStack {
-                            Divider().background(Color.gray.opacity(0.5))
-                        }
-                        
-                        Text("Or sign in with")
-                            .font(.system(size: 14))
-                            .foregroundColor(.gray)
-                            .padding(.horizontal, 10)
-                        
-                        VStack {
-                            Divider().background(Color.gray.opacity(0.5))
-                        }
-                    }
-                    .padding(.vertical, 20)
-                    .opacity(animateContent ? 1 : 0)
-                    
-                    // Social Login Buttons
-                    HStack(spacing: 20) {
-                        Button(action: {}) {
-                            Image(systemName: "g.circle.fill")
-                                .resizable()
-                                .aspectRatio(contentMode: .fit)
-                                .frame(width: 24, height: 24)
-                                .padding()
-                                .foregroundColor(.black)
-                                .background(
-                                    Circle()
-                                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-                                )
-                        }
-                        
-                        Button(action: {}) {
-                            Image(systemName: "apple.logo")
-                                .resizable()
-                                .aspectRatio(contentMode: .fit)
-                                .frame(width: 24, height: 24)
-                                .padding()
-                                .foregroundColor(.black)
-                                .background(
-                                    Circle()
-                                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-                                )
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .opacity(animateContent ? 1 : 0)
                     
                     Spacer(minLength: 100)
                 }

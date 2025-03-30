@@ -88,7 +88,7 @@ struct AuthResponse: Codable {
 struct OTPResponse: Codable {
     let status: Bool
     let message: String
-    let otp: String?  // Added for simulating OTP in development
+    let otp: String?  // OTP returned by API for development/testing purposes
     let username: String? // Add username field from response
     let id: String? // Add ID field from response
     

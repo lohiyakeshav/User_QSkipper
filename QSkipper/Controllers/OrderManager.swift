@@ -179,6 +179,9 @@ class OrderManager: ObservableObject {
             let encoder = JSONEncoder()
             let data = try encoder.encode(currentCart)
             UserDefaults.standard.set(data, forKey: cartKey)
+            
+            // Post notification that cart has changed
+            NotificationCenter.default.post(name: NSNotification.Name("CartDidChange"), object: nil)
         } catch {
             print("Error saving cart: \(error)")
         }

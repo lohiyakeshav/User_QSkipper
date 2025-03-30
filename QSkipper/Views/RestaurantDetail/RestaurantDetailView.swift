@@ -19,10 +19,6 @@ struct RestaurantDetailView: View {
             viewModel.loadProducts(for: restaurant.id)
         }
         .overlay(cartFloatingButton)
-        .sheet(isPresented: $showCartSheet) {
-            CartView()
-                .environmentObject(orderManager)
-        }
     }
     
     // MARK: - Restaurant Banner Section
@@ -294,9 +290,7 @@ struct RestaurantDetailView: View {
             
             // Only show if cart is not empty
             if !orderManager.currentCart.isEmpty {
-                Button {
-                    showCartSheet = true
-                } label: {
+                NavigationLink(destination: CartView()) {
                     HStack(spacing: 15) {
                         // Cart icon with count
                         ZStack {
@@ -354,21 +348,6 @@ struct RestaurantDetailView: View {
 }
 
 // Helper Components
-
-// MARK: - Mock Data for Preview
-struct MockData {
-    static let restaurants = [
-        Restaurant(
-            id: "123",
-            name: "Tasty Bites",
-            estimatedTime: "25-30",
-            cuisine: "Italian",
-            photoId: "restaurant1",
-            rating: 4.5,
-            location: "123 Main Street, City"
-        )
-    ]
-}
 
 struct CategoryButton: View {
     let name: String
@@ -553,8 +532,16 @@ struct MenuProductCard: View {
 
 struct RestaurantDetailView_Previews: PreviewProvider {
     static var previews: some View {
-        RestaurantDetailView(restaurant: MockData.restaurants[0])
-            .environmentObject(OrderManager.shared)
-            .environmentObject(FavoriteManager.shared)
+        RestaurantDetailView(restaurant: Restaurant(
+            id: "previewRestaurant",
+            name: "Preview Restaurant",
+            estimatedTime: "25-30",
+            cuisine: "Various",
+            photoId: nil,
+            rating: 4.5,
+            location: "Preview Location"
+        ))
+        .environmentObject(OrderManager.shared)
+        .environmentObject(FavoriteManager.shared)
     }
 } 

@@ -123,7 +123,7 @@ struct LoginView: View {
                             .font(.system(size: 16, weight: .medium))
                             .foregroundColor(.black.opacity(0.8))
                         
-                        TextField("Keshav.lohiyas@gmail.com", text: $viewModel.email)
+                        TextField("Enter your email address", text: $viewModel.email)
                             .font(.system(size: 16))
                             .padding(.vertical, 16)
                             .padding(.horizontal, 12)

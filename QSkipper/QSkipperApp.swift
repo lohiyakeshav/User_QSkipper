@@ -22,6 +22,12 @@ struct QSkipperApp: App {
                 .environmentObject(orderManager)
                 .environmentObject(favoriteManager)
                 .environmentObject(locationManager)
+                .safeAreaInset(edge: .top) {
+                    Color.clear.frame(height: 0)
+                }
+                .safeAreaInset(edge: .bottom) {
+                    Color.clear.frame(height: 1)
+                }
         }
     }
 }

@@ -10,478 +10,818 @@ import SwiftUI
 struct CartView: View {
     @Environment(\.presentationMode) var presentationMode
     @EnvironmentObject private var orderManager: OrderManager
-    @StateObject private var viewModel = CartViewModel()
-    @State private var showOrderSuccess = false
+    @StateObject private var controller = CartViewController()
     
     var body: some View {
-        NavigationView {
-            ZStack {
-                Color.gray.opacity(0.05).edgesIgnoringSafeArea(.all)
-                
-                VStack {
-                    // Cart items
-                    if orderManager.currentCart.isEmpty {
-                        // Empty state
-                        VStack(spacing: 20) {
-                            Spacer()
-                            
-                            Image(systemName: "cart")
-                                .font(.system(size: 60))
-                                .foregroundColor(AppColors.primaryGreen.opacity(0.4))
-                            
-                            Text("Your cart is empty")
-                                .font(.system(size: 18, weight: .semibold))
-                                .foregroundColor(AppColors.darkGray)
-                            
-                            Text("Add some items to your cart")
-                                .font(.system(size: 14))
-                                .foregroundColor(AppColors.mediumGray)
-                                .multilineTextAlignment(.center)
-                            
-                            Button {
-                                presentationMode.wrappedValue.dismiss()
-                            } label: {
-                                Text("Continue Shopping")
-                                    .font(.system(size: 16, weight: .semibold))
-                                    .foregroundColor(.white)
-                                    .padding(.horizontal, 30)
-                                    .padding(.vertical, 12)
-                                    .background(AppColors.primaryGreen)
-                                    .cornerRadius(8)
-                            }
-                            .padding(.top, 15)
-                            
-                            Spacer()
-                        }
-                        .padding()
-                    } else {
-                        ScrollView {
-                            VStack(spacing: 0) {
-                                // Restaurant info
-                                if let restaurant = viewModel.restaurant {
-                                    HStack(spacing: 12) {
-                                        // Restaurant image
-                                        RestaurantImageView(photoId: restaurant.photoId, name: restaurant.name)
-                                            .frame(width: 50, height: 50)
-                                            .cornerRadius(8)
-                                        
-                                        // Restaurant info
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text(restaurant.name)
-                                                .font(.system(size: 16, weight: .semibold))
-                                                .foregroundColor(AppColors.darkGray)
-                                            
-                                            Text(restaurant.location)
-                                                .font(.system(size: 12))
-                                                .foregroundColor(AppColors.mediumGray)
-                                        }
-                                        
-                                        Spacer()
-                                        
-                                        // Restaurant rating
-                                        HStack(spacing: 2) {
-                                            Image(systemName: "star.fill")
-                                                .foregroundColor(.yellow)
-                                                .font(.system(size: 12))
-                                            
-                                            Text(String(format: "%.1f", restaurant.rating))
-                                                .font(.system(size: 12, weight: .medium))
-                                                .foregroundColor(AppColors.darkGray)
-                                        }
-                                        .padding(.horizontal, 8)
-                                        .padding(.vertical, 4)
-                                        .background(Color.gray.opacity(0.1))
-                                        .cornerRadius(8)
-                                    }
-                                    .padding(.horizontal, 20)
-                                    .padding(.vertical, 15)
-                                    .background(Color.white)
-                                }
-                                
-                                // Section Title
-                                HStack {
-                                    Text("YOUR ORDER")
-                                        .font(.system(size: 12, weight: .medium))
-                                        .foregroundColor(AppColors.mediumGray)
-                                        .padding(.horizontal, 20)
-                                        .padding(.vertical, 12)
-                                    
-                                    Spacer()
-                                    
-                                    Button {
-                                        withAnimation {
-                                            orderManager.clearCart()
-                                        }
-                                    } label: {
-                                        Text("Clear Cart")
-                                            .font(.system(size: 12, weight: .medium))
-                                            .foregroundColor(AppColors.errorRed)
-                                            .padding(.horizontal, 20)
-                                    }
-                                }
-                                .background(Color.gray.opacity(0.05))
-                                
-                                // Cart items
-                                ForEach(orderManager.currentCart.indices, id: \.self) { index in
-                                    let item = orderManager.currentCart[index]
-                                    CartItemRow(
-                                        item: item,
-                                        onIncrement: {
-                                            orderManager.incrementItem(at: index)
-                                        },
-                                        onDecrement: {
-                                            orderManager.decrementItem(at: index)
-                                        }
-                                    )
-                                    .padding(.horizontal, 20)
-                                    .padding(.vertical, 12)
-                                    .background(Color.white)
-                                    
-                                    if index < orderManager.currentCart.count - 1 {
-                                        Divider()
-                                            .padding(.leading, 80)
-                                            .padding(.trailing, 20)
-                                    }
-                                }
-                                
-                                // Section Title
-                                HStack {
-                                    Text("BILL DETAILS")
-                                        .font(.system(size: 12, weight: .medium))
-                                        .foregroundColor(AppColors.mediumGray)
-                                        .padding(.horizontal, 20)
-                                        .padding(.vertical, 12)
-                                    
-                                    Spacer()
-                                }
-                                .background(Color.gray.opacity(0.05))
-                                
-                                // Bill details
-                                VStack(spacing: 15) {
-                                    // Item total
-                                    HStack {
-                                        Text("Item Total")
-                                            .font(.system(size: 14))
-                                            .foregroundColor(AppColors.darkGray)
-                                        
-                                        Spacer()
-                                        
-                                        Text("₹\(String(format: "%.0f", orderManager.getCartTotal()))")
-                                            .font(.system(size: 14))
-                                            .foregroundColor(AppColors.darkGray)
-                                    }
-                                    
-                                    // Delivery fee
-                                    HStack {
-                                        Text("Delivery Fee")
-                                            .font(.system(size: 14))
-                                            .foregroundColor(AppColors.darkGray)
-                                        
-                                        Spacer()
-                                        
-                                        Text("₹\(String(format: "%.0f", viewModel.getDeliveryFee()))")
-                                            .font(.system(size: 14))
-                                            .foregroundColor(AppColors.darkGray)
-                                    }
-                                    
-                                    // Platform fee
-                                    HStack {
-                                        Text("Platform Fee")
-                                            .font(.system(size: 14))
-                                            .foregroundColor(AppColors.darkGray)
-                                        
-                                        Spacer()
-                                        
-                                        Text("₹\(String(format: "%.0f", viewModel.getPlatformFee()))")
-                                            .font(.system(size: 14))
-                                            .foregroundColor(AppColors.darkGray)
-                                    }
-                                    
-                                    // Taxes
-                                    HStack {
-                                        Text("GST and Restaurant Charges")
-                                            .font(.system(size: 14))
-                                            .foregroundColor(AppColors.darkGray)
-                                        
-                                        Spacer()
-                                        
-                                        Text("₹\(String(format: "%.0f", viewModel.getTaxes()))")
-                                            .font(.system(size: 14))
-                                            .foregroundColor(AppColors.darkGray)
-                                    }
-                                    
-                                    Divider()
-                                        .padding(.vertical, 5)
-                                    
-                                    // Total
-                                    HStack {
-                                        Text("Total")
-                                            .font(.system(size: 16, weight: .semibold))
-                                            .foregroundColor(AppColors.darkGray)
-                                        
-                                        Spacer()
-                                        
-                                        Text("₹\(String(format: "%.0f", viewModel.getTotalAmount()))")
-                                            .font(.system(size: 16, weight: .semibold))
-                                            .foregroundColor(AppColors.primaryGreen)
-                                    }
-                                }
-                                .padding(.horizontal, 20)
-                                .padding(.vertical, 15)
-                                .background(Color.white)
-                                
-                                // Special instructions
-                                VStack(alignment: .leading, spacing: 10) {
-                                    Text("Special Instructions")
-                                        .font(.system(size: 14, weight: .semibold))
-                                        .foregroundColor(AppColors.darkGray)
-                                    
-                                    TextEditor(text: $viewModel.specialInstructions)
-                                        .font(.system(size: 14))
-                                        .foregroundColor(.black)
-                                        .padding(10)
-                                        .frame(height: 100)
-                                        .background(Color.gray.opacity(0.1))
-                                        .cornerRadius(8)
-                                        .overlay(
-                                            RoundedRectangle(cornerRadius: 8)
-                                                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-                                        )
-                                }
-                                .padding(.horizontal, 20)
-                                .padding(.vertical, 15)
-                                .background(Color.white)
-                                
-                                // Bottom padding
-                                Color.clear
-                                    .frame(height: 100)
-                            }
-                        }
-                        
-                        // Checkout button
-                        VStack {
-                            Button {
-                                viewModel.isProcessingOrder = true
-                                
-                                // Simulate order processing
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                                    viewModel.isProcessingOrder = false
-                                    showOrderSuccess = true
-                                }
-                            } label: {
-                                HStack {
-                                    Text("Proceed to Pay")
-                                        .font(.system(size: 16, weight: .semibold))
-                                        .foregroundColor(.white)
-                                    
-                                    Spacer()
-                                    
-                                    Text("₹\(String(format: "%.0f", viewModel.getTotalAmount()))")
-                                        .font(.system(size: 16, weight: .semibold))
-                                        .foregroundColor(.white)
-                                }
-                                .padding(.horizontal, 20)
-                                .padding(.vertical, 15)
-                                .background(AppColors.primaryGreen)
-                                .cornerRadius(8)
-                            }
-                            .disabled(viewModel.isProcessingOrder)
-                            .opacity(viewModel.isProcessingOrder ? 0.7 : 1)
-                            .overlay(
-                                Group {
-                                    if viewModel.isProcessingOrder {
-                                        ProgressView()
-                                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                    }
-                                }
-                            )
-                            .padding(.horizontal, 20)
-                            .padding(.vertical, 10)
-                            .background(Color.white)
-                            .shadow(color: Color.black.opacity(0.1), radius: 5, x: 0, y: -2)
-                        }
+        ScrollView {
+            VStack(spacing: 0) {
+                if orderManager.currentCart.isEmpty {
+                    emptyCartView
+                } else {
+                    // Order Summary Header
+                    headerView
+                    
+                    // Order Type Selection Pills
+                    orderTypeSelectionView
+                    
+                    // Cart Items 
+                    cartItemsListView
+                    
+                    // Add more button (divider line)
+                    addMoreButtonView
+                    
+                    // Delivery Options
+                    deliveryOptionsView
+                    
+                    // Restaurant Details
+                    if let restaurant = controller.restaurant {
+                        restaurantDetailsView(restaurant: restaurant)
                     }
+                    
+                    // Bill Details
+                    billDetailsView
+                    
+                    Spacer(minLength: 80)
                 }
-                
-                if showOrderSuccess {
-                    OrderSuccessView {
-                        self.orderManager.clearCart()
-                        self.showOrderSuccess = false
-                        self.presentationMode.wrappedValue.dismiss()
-                    }
-                    .transition(.opacity)
-                    .animation(.easeInOut, value: showOrderSuccess)
-                }
-            }
-            .navigationTitle("Your Cart")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button {
-                        presentationMode.wrappedValue.dismiss()
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundColor(AppColors.darkGray)
-                    }
-                }
-            }
-            .onAppear {
-                viewModel.setupCart(with: orderManager.currentCart)
             }
         }
+        .navigationTitle("Your Cart")
+        .navigationBarTitleDisplayMode(.inline)
+        .overlay(paymentButtonOverlay)
+        .overlay(orderStatusOverlay)
+        .sheet(isPresented: $controller.showSchedulePicker) {
+            SchedulePickerSheet(
+                selectedDate: $controller.scheduledDate,
+                isScheduled: $controller.isSchedulingOrder,
+                onConfirm: {}
+            )
+        }
+        .onAppear {
+            controller.loadRestaurantDetails()
+        }
     }
-}
-
-struct CartItemRow: View {
-    let item: CartItem
-    let onIncrement: () -> Void
-    let onDecrement: () -> Void
     
-    var body: some View {
-        HStack(spacing: 15) {
-            // Veg/Non-veg indicator
-            ZStack {
-                RoundedRectangle(cornerRadius: 3)
-                    .stroke(item.product.isVeg ? Color.green : Color.red, lineWidth: 1)
-                    .frame(width: 16, height: 16)
-                
-                Circle()
-                    .fill(item.product.isVeg ? Color.green : Color.red)
-                    .frame(width: 8, height: 8)
-            }
+    // MARK: - Empty Cart View
+    private var emptyCartView: some View {
+        VStack(spacing: 20) {
+            Spacer()
             
-            // Product image
-            ProductImageView(photoId: item.product.photoId, name: item.product.name, category: item.product.category)
-                .frame(width: 50, height: 50)
-                .cornerRadius(8)
+            Image(systemName: "cart")
+                .font(.system(size: 60))
+                .foregroundColor(AppColors.primaryGreen.opacity(0.4))
             
-            // Product details
-            VStack(alignment: .leading, spacing: 4) {
-                Text(item.product.name)
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(AppColors.darkGray)
-                
-                Text("₹\(String(format: "%.0f", item.product.price))")
-                    .font(.system(size: 12))
-                    .foregroundColor(AppColors.primaryGreen)
+            Text("Your cart is empty")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundColor(AppColors.darkGray)
+            
+            Text("Add some items to your cart")
+                .font(.system(size: 14))
+                .foregroundColor(AppColors.mediumGray)
+                .multilineTextAlignment(.center)
+            
+            NavigationLink(destination: HomeView()) {
+                Text("Browse Restaurants")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 15)
+                    .background(AppColors.primaryGreen)
+                    .cornerRadius(10)
+                    .padding(.horizontal, 60)
             }
             
             Spacer()
+        }
+        .frame(height: 400)
+        .padding(.top, 40)
+    }
+    
+    // MARK: - Header View
+    private var headerView: some View {
+        HStack {
+            Text("Order Summary")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundColor(AppColors.darkGray)
+                .padding(.leading, 16)
             
-            // Quantity controls
-            HStack(spacing: 0) {
+            Spacer()
+        }
+        .padding(.vertical, 16)
+    }
+    
+    // MARK: - Order Type Selection
+    private var orderTypeSelectionView: some View {
+        VStack(spacing: 16) {
+            HStack {
+                Capsule()
+                    .fill(Color.gray.opacity(0.1))
+                    .frame(height: 40)
+                    .overlay(
+                        HStack(spacing: 0) {
+                            // Pick Up button
+                            Button {
+                                orderManager.selectedOrderType = .takeaway
+                            } label: {
+                                Text("Pick Up")
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundColor(orderManager.selectedOrderType == .takeaway ? .white : AppColors.darkGray)
+                                    .frame(maxWidth: .infinity)
+                                    .frame(height: 34)
+                                    .background(
+                                        orderManager.selectedOrderType == .takeaway ?
+                                        Capsule().fill(Color.green) : Capsule().fill(Color.clear)
+                                    )
+                                    .padding(3)
+                            }
+                            
+                            // Dine In button
+                            Button {
+                                orderManager.selectedOrderType = .dineIn
+                            } label: {
+                                Text("Dine In")
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundColor(orderManager.selectedOrderType == .dineIn ? .white : AppColors.darkGray)
+                                    .frame(maxWidth: .infinity)
+                                    .frame(height: 34)
+                                    .background(
+                                        orderManager.selectedOrderType == .dineIn ?
+                                        Capsule().fill(Color.green) : Capsule().fill(Color.clear)
+                                    )
+                                    .padding(3)
+                            }
+                        }
+                    )
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 20)
+    }
+    
+    // MARK: - Delivery Options
+    private var deliveryOptionsView: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Delivery Options")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(AppColors.darkGray)
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+            
+            HStack(spacing: 10) {
+                // Now option
                 Button {
-                    onDecrement()
+                    controller.isSchedulingOrder = false
                 } label: {
-                    Image(systemName: "minus")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(item.quantity > 1 ? AppColors.primaryGreen : Color.gray)
-                        .frame(width: 28, height: 28)
-                        .background(Color.gray.opacity(0.1))
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Now")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundColor(controller.isSchedulingOrder ? AppColors.darkGray : AppColors.primaryGreen)
+                        
+                        Text("As soon as possible")
+                            .font(.system(size: 12))
+                            .foregroundColor(AppColors.mediumGray)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 12)
+                    .padding(.horizontal, 12)
+                    .background(controller.isSchedulingOrder ? Color.clear : Color.gray.opacity(0.1))
+                    .cornerRadius(8)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(controller.isSchedulingOrder ? Color.gray.opacity(0.3) : AppColors.primaryGreen, lineWidth: 1)
+                    )
                 }
-                .disabled(item.quantity <= 1)
                 
-                Text("\(item.quantity)")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(AppColors.darkGray)
-                    .frame(width: 30)
-                
+                // Schedule option
                 Button {
-                    onIncrement()
+                    controller.showSchedulePicker = true
+                    controller.isSchedulingOrder = true
                 } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(AppColors.primaryGreen)
-                        .frame(width: 28, height: 28)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Schedule")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundColor(controller.isSchedulingOrder ? AppColors.primaryGreen : AppColors.darkGray)
+                        
+                        if controller.isSchedulingOrder {
+                            Text(formattedScheduleDate)
+                                .font(.system(size: 12))
+                                .foregroundColor(AppColors.mediumGray)
+                        } else {
+                            Text("Select time")
+                                .font(.system(size: 12))
+                                .foregroundColor(AppColors.mediumGray)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 12)
+                    .padding(.horizontal, 12)
+                    .background(controller.isSchedulingOrder ? Color.gray.opacity(0.1) : Color.clear)
+                    .cornerRadius(8)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(controller.isSchedulingOrder ? AppColors.primaryGreen : Color.gray.opacity(0.3), lineWidth: 1)
+                    )
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 16)
+        }
+    }
+    
+    // MARK: - Cart Items List
+    private var cartItemsListView: some View {
+        VStack(spacing: 20) {
+            ForEach(orderManager.currentCart.indices, id: \.self) { index in
+                let item = orderManager.currentCart[index]
+                
+                HStack(spacing: 12) {
+                    // Product image
+                    ProductImageView(photoId: item.product.photoId, name: item.product.name, category: item.product.category)
+                        .frame(width: 60, height: 60)
+                        .cornerRadius(8)
+                    
+                    // Product details
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(item.product.name)
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(AppColors.darkGray)
+                        
+                        Text("₹\(String(format: "%.2f", item.product.price))")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(AppColors.darkGray)
+                    }
+                    
+                    Spacer()
+                    
+                    // Quantity selector
+                    HStack {
+                        Button {
+                            if item.quantity > 1 {
+                                orderManager.decrementItem(at: index)
+                            }
+                        } label: {
+                            Text("−")
+                                .font(.system(size: 18, weight: .medium))
+                                .foregroundColor(.black)
+                                .frame(width: 36, height: 36)
+                        }
                         .background(Color.gray.opacity(0.1))
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        
+                        Text("\(item.quantity)")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(.black)
+                            .frame(width: 36, height: 36)
+                        
+                        Button {
+                            orderManager.incrementItem(at: index)
+                        } label: {
+                            Text("+")
+                                .font(.system(size: 18, weight: .medium))
+                                .foregroundColor(.black)
+                                .frame(width: 36, height: 36)
+                        }
+                        .background(Color.gray.opacity(0.1))
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                    }
+                }
+                .padding(.horizontal, 16)
+                
+                if index < orderManager.currentCart.count - 1 {
+                    Divider()
+                        .padding(.horizontal, 16)
+                }
+            }
+        }
+        .padding(.vertical, 20)
+        .background(Color.white)
+    }
+    
+    // MARK: - Add More Button
+    private var addMoreButtonView: some View {
+        Button {
+            presentationMode.wrappedValue.dismiss()
+        } label: {
+            HStack {
+                Spacer()
+                Image(systemName: "plus")
+                    .foregroundColor(AppColors.darkGray)
+                Text("Add more")
+                    .font(.system(size: 14))
+                    .foregroundColor(AppColors.darkGray)
+                Spacer()
+            }
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+            )
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+        }
+    }
+    
+    // MARK: - Restaurant Details
+    private func restaurantDetailsView(restaurant: Restaurant) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Restaurant Details")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(AppColors.darkGray)
+                .padding(.horizontal, 16)
+                .padding(.top, 16)
+            
+            VStack(spacing: 12) {
+                HStack(spacing: 12) {
+                    // Restaurant image
+                    RestaurantImageView(photoId: restaurant.photoId, name: restaurant.name)
+                        .frame(width: 60, height: 60)
+                        .cornerRadius(8)
+                    
+                    // Restaurant details
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(restaurant.name)
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(AppColors.darkGray)
+                        
+                        Text(restaurant.location)
+                            .font(.system(size: 14))
+                            .foregroundColor(AppColors.mediumGray)
+                            .lineLimit(2)
+                        
+                        Text(restaurant.estimatedTime != nil ? "\(restaurant.estimatedTime!) delivery time" : "30-40 min delivery time")
+                            .font(.system(size: 14))
+                            .foregroundColor(AppColors.mediumGray)
+                    }
+                    
+                    Spacer()
+                }
+                .padding(.horizontal, 16)
+                
+                // Scheduled info when scheduled
+                if controller.isSchedulingOrder {
+                    ZStack {
+                        Rectangle()
+                            .fill(Color.green.opacity(0.1))
+                            .cornerRadius(8)
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Image(systemName: "calendar")
+                                    .foregroundColor(AppColors.primaryGreen)
+                                
+                                Text("Order scheduled for:")
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundColor(AppColors.darkGray)
+                                
+                                Spacer()
+                                
+                                Button {
+                                    controller.showSchedulePicker = true
+                                } label: {
+                                    Text("Change")
+                                        .font(.system(size: 14, weight: .medium))
+                                        .foregroundColor(AppColors.primaryGreen)
+                                }
+                            }
+                            
+                            Text(formattedScheduleDate)
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundColor(AppColors.darkGray)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                    }
+                    .frame(height: 60)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+                }
+            }
+            .padding(.bottom, 16)
+        }
+        .background(Color.white)
+    }
+    
+    // MARK: - Bill Details
+    private var billDetailsView: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Bill Details")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(AppColors.darkGray)
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+            
+            // Bill breakdown
+            VStack(spacing: 12) {
+                // Item total
+                HStack {
+                    Text("Item Total")
+                        .font(.system(size: 14))
+                        .foregroundColor(AppColors.darkGray)
+                    
+                    Spacer()
+                    
+                    Text("₹\(String(format: "%.2f", orderManager.getCartTotal()))")
+                        .font(.system(size: 14))
+                        .foregroundColor(AppColors.darkGray)
+                }
+                
+                // Convenience fee
+                HStack {
+                    Text("Convenience Fee (4%)")
+                        .font(.system(size: 14))
+                        .foregroundColor(AppColors.darkGray)
+                    
+                    Spacer()
+                    
+                    Text("₹\(String(format: "%.2f", controller.getConvenienceFee()))")
+                        .font(.system(size: 14))
+                        .foregroundColor(AppColors.darkGray)
+                }
+                
+                Divider()
+                
+                // To Pay (Total)
+                HStack {
+                    Text("To Pay")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(AppColors.darkGray)
+                    
+                    Spacer()
+                    
+                    Text("₹\(String(format: "%.2f", controller.getTotalAmount()))")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(AppColors.darkGray)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+        }
+    }
+    
+    // MARK: - Payment Button Overlay
+    private var paymentButtonOverlay: some View {
+        Group {
+            if !orderManager.currentCart.isEmpty {
+                // Bottom Payment Button
+                VStack {
+                    Spacer()
+                    
+                    HStack {
+                        // Total amount
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("₹\(String(format: "%.2f", controller.getTotalAmount()))")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(AppColors.darkGray)
+                            
+                            Text("Inc. Taxes and charges")
+                                .font(.system(size: 10))
+                                .foregroundColor(AppColors.mediumGray)
+                        }
+                        
+                        Spacer()
+                        
+                        // Pay button
+                        Button {
+                            controller.placeOrder()
+                        } label: {
+                            Text("Proceed to pay")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 40)
+                                .padding(.vertical, 16)
+                                .background(AppColors.primaryGreen)
+                                .cornerRadius(8)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 16)
+                    .background(Color.white)
+                    .shadow(color: Color.black.opacity(0.1), radius: 8, y: -4)
                 }
             }
         }
     }
+    
+    // MARK: - Order Status Overlay
+    private var orderStatusOverlay: some View {
+        ZStack {
+            if controller.isProcessing {
+                Color.black.opacity(0.4)
+                    .edgesIgnoringSafeArea(.all)
+                
+                VStack(spacing: 20) {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                        .scaleEffect(1.5)
+                    
+                    Text("Processing payment...")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(.white)
+                }
+            }
+            
+            if controller.showOrderSuccess {
+                ZStack {
+                    // Background overlay
+                    Color.black.opacity(0.7)
+                        .edgesIgnoringSafeArea(.all)
+                    
+                    // Success message card
+                    VStack(spacing: 20) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .resizable()
+                            .frame(width: 80, height: 80)
+                            .foregroundColor(AppColors.primaryGreen)
+                        
+                        Text("Order Placed Successfully!")
+                            .font(.system(size: 22, weight: .bold))
+                            .foregroundColor(.white)
+                            .multilineTextAlignment(.center)
+                        
+                        Text("Your order has been placed. You can track your order status in the Order History section.")
+                            .font(.system(size: 16))
+                            .foregroundColor(.white)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 30)
+                        
+                        Button {
+                            // Dismiss the cart view and return to restaurant
+                            self.presentationMode.wrappedValue.dismiss()
+                        } label: {
+                            Text("Done")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(.white)
+                                .frame(minWidth: 200)
+                                .padding()
+                                .background(AppColors.primaryGreen)
+                                .cornerRadius(10)
+                        }
+                        .padding(.top, 20)
+                    }
+                    .padding(30)
+                    .background(Color.black.opacity(0.2))
+                    .cornerRadius(20)
+                    .padding(.horizontal, 40)
+                }
+            }
+        }
+    }
+    
+    // MARK: - Formatted Scheduled Date
+    private var formattedScheduleDate: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "d MMM, h:mm a"
+        return formatter.string(from: controller.scheduledDate)
+    }
 }
 
-struct OrderSuccessView: View {
-    let onDone: () -> Void
+struct SchedulePickerSheet: View {
+    @Environment(\.presentationMode) var presentationMode
+    @Binding var selectedDate: Date
+    @Binding var isScheduled: Bool
+    var onConfirm: () -> Void
+    
+    @State private var selectedDay: String = "Today"
+    @State private var selectedTime: String = "12:00 PM"
+    
+    let dayOptions = ["Today", "Tomorrow"]
+    let timeOptions = ["12:00 PM", "12:30 PM", "1:00 PM", "1:30 PM", "2:00 PM", "2:30 PM", "3:00 PM", "3:30 PM", "4:00 PM", "4:30 PM", "5:00 PM", "5:30 PM", "6:00 PM"]
     
     var body: some View {
-        ZStack {
-            Color.black.opacity(0.5)
-                .edgesIgnoringSafeArea(.all)
-            
-            VStack(spacing: 20) {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 80))
-                    .foregroundColor(AppColors.primaryGreen)
-                    .padding(.top, 30)
+        VStack(spacing: 20) {
+            // Header with icon and title
+            HStack {
+                Spacer()
                 
-                Text("Order Placed!")
-                    .font(.system(size: 24, weight: .bold))
-                    .foregroundColor(AppColors.darkGray)
+                HStack {
+                    Image(systemName: "clock.circle.fill")
+                        .foregroundColor(.green)
+                        .font(.system(size: 22))
+                    
+                    Text("Schedule Order")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(AppColors.darkGray)
+                }
                 
-                Text("Your order has been placed successfully.\nYou can track your order status in the Orders section.")
-                    .font(.system(size: 16))
-                    .foregroundColor(AppColors.mediumGray)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 30)
+                Spacer()
                 
                 Button {
-                    onDone()
+                    presentationMode.wrappedValue.dismiss()
                 } label: {
-                    Text("Done")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 40)
-                        .padding(.vertical, 12)
-                        .background(AppColors.primaryGreen)
-                        .cornerRadius(8)
+                    Image(systemName: "xmark")
+                        .foregroundColor(.black)
+                        .font(.system(size: 18))
+                        .padding(8)
+                        .background(Circle().fill(Color.gray.opacity(0.1)))
                 }
-                .padding(.top, 20)
-                .padding(.bottom, 30)
             }
-            .padding()
-            .background(Color.white)
-            .cornerRadius(16)
-            .padding(.horizontal, 40)
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            
+            Divider()
+            
+            // Day selection
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Select Day")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(AppColors.darkGray)
+                
+                HStack(spacing: 12) {
+                    ForEach(dayOptions, id: \.self) { day in
+                        let isSelected = selectedDay == day
+                        
+                        Button {
+                            selectedDay = day
+                            
+                            // Update date based on selection
+                            let calendar = Calendar.current
+                            if day == "Today" {
+                                selectedDate = Date()
+                            } else {
+                                selectedDate = calendar.date(byAdding: .day, value: 1, to: Date()) ?? Date()
+                            }
+                        } label: {
+                            VStack {
+                                Text(day)
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundColor(isSelected ? .green : AppColors.darkGray)
+                                
+                                // Use DateFormatter for the date display
+                                Text(formattedDateString(for: day))
+                                    .font(.system(size: 12))
+                                    .foregroundColor(AppColors.mediumGray)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(isSelected ? Color.green.opacity(0.1) : Color.clear)
+                            .cornerRadius(8)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(isSelected ? Color.green : Color.gray.opacity(0.3), lineWidth: 1)
+                            )
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            
+            // Time selection
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Select Time")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(AppColors.darkGray)
+                
+                // Time options as a grid
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                    ForEach(visibleTimeOptions, id: \.self) { time in
+                        let isSelected = selectedTime == time
+                        
+                        Button {
+                            selectedTime = time
+                            updateSelectedDate(with: time)
+                        } label: {
+                            Text(time)
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundColor(isSelected ? .green : AppColors.darkGray)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .background(isSelected ? Color.green.opacity(0.1) : Color.clear)
+                                .cornerRadius(8)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .stroke(isSelected ? Color.green : Color.gray.opacity(0.3), lineWidth: 1)
+                                )
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            
+            Spacer()
+            
+            // Confirm button
+            Button {
+                isScheduled = true
+                onConfirm()
+                presentationMode.wrappedValue.dismiss()
+            } label: {
+                Text("Confirm")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                    .background(AppColors.primaryGreen)
+                    .cornerRadius(8)
+                    .padding(.horizontal, 16)
+            }
+            .padding(.bottom, 40)
+        }
+        .frame(height: 550)
+        .background(Color.white)
+        .cornerRadius(20, corners: [.topLeft, .topRight])
+        .padding(.top, 16)
+    }
+    
+    // Computed property for time options based on day
+    private var visibleTimeOptions: [String] {
+        if selectedDay == "Today" {
+            let calendar = Calendar.current
+            let hour = calendar.component(.hour, from: Date())
+            
+            // If current hour is before 11 AM, show all options
+            if hour < 11 {
+                return timeOptions
+            }
+            
+            // If current hour is after 6 PM, show no options for today
+            if hour >= 18 {
+                return []
+            }
+            
+            // Otherwise show times that are at least 1 hour from now
+            return timeOptions.filter { time in
+                let timeHour = hourFromTimeString(time)
+                return timeHour > hour + 1 && timeHour <= 18
+            }
+        } else {
+            // For tomorrow, show all allowed times (11 AM to 6 PM)
+            return timeOptions
+        }
+    }
+    
+    // Helper to get formatted date string
+    private func formattedDateString(for option: String) -> String {
+        let calendar = Calendar.current
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "d MMM"
+        
+        if option == "Today" {
+            return dateFormatter.string(from: Date())
+        } else {
+            let tomorrow = calendar.date(byAdding: .day, value: 1, to: Date()) ?? Date()
+            return dateFormatter.string(from: tomorrow)
+        }
+    }
+    
+    // Helper to parse hour from time string
+    private func hourFromTimeString(_ time: String) -> Int {
+        let components = time.components(separatedBy: ":")
+        if components.count > 0 {
+            if let hourString = components.first, let hour = Int(hourString) {
+                return time.contains("PM") && hour != 12 ? hour + 12 : hour
+            }
+        }
+        return 0
+    }
+    
+    // Update selected date with the chosen time
+    private func updateSelectedDate(with timeString: String) {
+        let calendar = Calendar.current
+        
+        // Extract hour and minute from the time string
+        let hourString = timeString.split(separator: ":").first!
+        let minuteString = timeString.split(separator: ":").last!.split(separator: " ").first!
+        
+        var hour = Int(hourString) ?? 12
+        let minute = Int(minuteString) ?? 0
+        
+        // Adjust for PM
+        if timeString.contains("PM") && hour != 12 {
+            hour += 12
+        } else if timeString.contains("AM") && hour == 12 {
+            hour = 0
+        }
+        
+        // Set the components
+        var components = calendar.dateComponents([.year, .month, .day], from: selectedDate)
+        components.hour = hour
+        components.minute = minute
+        
+        if let date = calendar.date(from: components) {
+            selectedDate = date
         }
     }
 }
 
-class CartViewModel: ObservableObject {
-    @Published var restaurant: Restaurant?
-    @Published var specialInstructions: String = ""
-    @Published var isProcessingOrder: Bool = false
-    
-    private let restaurantManager = RestaurantManager.shared
-    
-    func setupCart(with items: [CartItem]) {
-        if let firstItem = items.first {
-            self.restaurant = restaurantManager.getRestaurant(by: firstItem.product.restaurantId)
-        }
+// Helper extension for rounded corners
+extension View {
+    func cornerRadius(_ radius: CGFloat, corners: UIRectCorner) -> some View {
+        clipShape(RoundedCorner(radius: radius, corners: corners))
     }
-    
-    func getDeliveryFee() -> Double {
-        return 40.0 // Fixed delivery fee
-    }
-    
-    func getPlatformFee() -> Double {
-        return 20.0 // Fixed platform fee
-    }
-    
-    func getTaxes() -> Double {
-        // Assume 5% tax on item total
-        return OrderManager.shared.getCartTotal() * 0.05
-    }
-    
-    func getTotalAmount() -> Double {
-        let itemTotal = OrderManager.shared.getCartTotal()
-        return itemTotal + getDeliveryFee() + getPlatformFee() + getTaxes()
+}
+
+struct RoundedCorner: Shape {
+    var radius: CGFloat = .infinity
+    var corners: UIRectCorner = .allCorners
+
+    func path(in rect: CGRect) -> Path {
+        let path = UIBezierPath(roundedRect: rect, byRoundingCorners: corners, cornerRadii: CGSize(width: radius, height: radius))
+        return Path(path.cgPath)
     }
 }
 
 #Preview {
-    CartView()
-        .environmentObject(OrderManager.shared)
+    NavigationView {
+        CartView()
+            .environmentObject(OrderManager.shared)
+    }
 } 

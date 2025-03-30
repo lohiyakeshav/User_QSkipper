@@ -19,7 +19,7 @@ struct ContentView: View {
             }
         }
         .onAppear {
-            // Simulate a splash screen/loading state
+            // Display splash screen for 2 seconds before showing main content
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
                 withAnimation {
                     isLoading = false

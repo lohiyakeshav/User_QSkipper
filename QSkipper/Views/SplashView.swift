@@ -22,7 +22,8 @@ struct SplashView: View {
                 
                 Image("Logo")
                     .resizable()
-                    .frame(width: 120, height: 120)
+                    .frame(width: 120, height: 130)
+                    .padding(.bottom, 60)
             }
             .onAppear {
                 print("SplashView appeared")

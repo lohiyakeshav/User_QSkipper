@@ -9,7 +9,7 @@ import SwiftUI
 import MapKit
 
 struct LocationPickerView: View {
-    @Environment(\.presentationMode) var presentationMode
+    @State private var navigateBack = false
     @StateObject private var locationManager = LocationManager.shared
     var onSelect: (String) -> Void
     
@@ -33,12 +33,12 @@ struct LocationPickerView: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            // Header with close button
+            // Header with back button
             HStack {
                 Button {
-                    presentationMode.wrappedValue.dismiss()
+                    navigateBack = true
                 } label: {
-                    Image(systemName: "xmark")
+                    Image(systemName: "arrow.left")
                         .font(.system(size: 18))
                         .foregroundColor(.black)
                         .padding(10)
@@ -104,7 +104,7 @@ struct LocationPickerView: View {
             Button {
                 locationManager.requestLocation()
                 onSelect(locationManager.locationName)
-                presentationMode.wrappedValue.dismiss()
+                navigateBack = true
             } label: {
                 HStack {
                     Image(systemName: "location.fill")
@@ -138,7 +138,7 @@ struct LocationPickerView: View {
                 ForEach(popularLocations, id: \.self) { location in
                     Button {
                         onSelect(location)
-                        presentationMode.wrappedValue.dismiss()
+                        navigateBack = true
                     } label: {
                         HStack {
                             Image(systemName: "mappin.and.ellipse")
@@ -168,6 +168,11 @@ struct LocationPickerView: View {
             locationManager.requestLocation()
         }
         .background(Color.gray.opacity(0.1).edgesIgnoringSafeArea(.all))
+        .background(
+            NavigationLink(destination: EmptyView(), isActive: $navigateBack) {
+                EmptyView()
+            }
+        )
     }
 }
 

@@ -243,16 +243,21 @@ struct HomeView: View {
             }
             .edgesIgnoringSafeArea(.bottom)
         }
-        .sheet(isPresented: $showCartSheet) {
-            CartView()
-                .environmentObject(orderManager)
-        }
-        .sheet(isPresented: $showLocationPicker) {
-            LocationPickerView(onSelect: { newLocation in
-                locationManager.locationName = newLocation
-                isLoadingLocation = false
-            })
-        }
+        .background(
+            NavigationLink(destination: CartView(), isActive: $showCartSheet) {
+                EmptyView()
+            }
+        )
+        .background(
+            NavigationLink(destination: 
+                LocationPickerView(onSelect: { newLocation in
+                    locationManager.locationName = newLocation
+                    isLoadingLocation = false
+                })
+            , isActive: $showLocationPicker) {
+                EmptyView()
+            }
+        )
         .onAppear {
             loadData()
         }
@@ -312,9 +317,7 @@ struct HomeView: View {
                         Spacer()
                         
                         // Cart button
-                        Button {
-                            showCartSheet = true
-                        } label: {
+                        NavigationLink(destination: CartView()) {
                             ZStack(alignment: .topTrailing) {
                                 Circle()
                                     .fill(AppColors.primaryGreen.opacity(0.1))
