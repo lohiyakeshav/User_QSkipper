@@ -27,9 +27,14 @@ struct ProfileView: View {
         }
         .onAppear {
             // Get user information
-            let _ = authManager.getCurrentUserName()
-            let _ = authManager.getCurrentUserEmail()
-            let _ = authManager.getCurrentUserId()
+            let userName = authManager.getCurrentUserName()
+            let userEmail = authManager.getCurrentUserEmail()
+            let userId = authManager.getCurrentUserId()
+            
+            print("👤 ProfileView.onAppear - User info:")
+            print("   - Name: \(userName ?? "nil")")
+            print("   - Email: \(userEmail ?? "nil")")
+            print("   - ID: \(userId ?? "nil")")
         }
         .safeAreaInset(edge: .top) {
             Color.clear.frame(height: 0)
@@ -43,7 +48,6 @@ struct ProfileView: View {
     private var profileContent: some View {
         VStack(spacing: 0) {
             profileHeader
-            accountSettingsSection
             supportSection
             logoutButton
             
@@ -104,42 +108,6 @@ struct ProfileView: View {
         .background(Color.white)
     }
     
-    // MARK: - Account Settings Section
-    private var accountSettingsSection: some View {
-        VStack(spacing: 0) {
-            // Section header
-            Text("Account Settings")
-                .font(.system(size: 16, weight: .medium))
-                .foregroundColor(.gray)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 20)
-                .padding(.vertical, 15)
-                .background(Color.gray.opacity(0.05))
-            
-            // Account settings menu
-            VStack(spacing: 0) {
-                MenuRow(icon: "bag", title: "My Orders") {
-                    print("Navigate to My Orders")
-                }
-                
-                Divider()
-                    .padding(.leading, 60)
-                
-                MenuRow(icon: "mappin.and.ellipse", title: "Delivery Addresses") {
-                    print("Navigate to Delivery Addresses")
-                }
-                
-                Divider()
-                    .padding(.leading, 60)
-                
-                MenuRow(icon: "creditcard", title: "Payment Methods") {
-                    print("Navigate to Payment Methods")
-                }
-            }
-            .background(Color.white)
-        }
-    }
-    
     // MARK: - Support Section
     private var supportSection: some View {
         VStack(spacing: 0) {
@@ -154,15 +122,59 @@ struct ProfileView: View {
             
             // Support menu
             VStack(spacing: 0) {
-                MenuRow(icon: "questionmark.circle", title: "Help Center") {
-                    print("Navigate to Help Center")
+                NavigationLink {
+                    HelpView()
+                } label: {
+                    HStack {
+                        Image(systemName: "questionmark.circle")
+                            .font(.system(size: 18))
+                            .foregroundColor(AppColors.primaryGreen)
+                            .frame(width: 24, height: 24)
+                            .padding(.leading, 20)
+                        
+                        Text("Help Center")
+                            .font(.system(size: 16))
+                            .foregroundColor(.black)
+                            .padding(.leading, 15)
+                        
+                        Spacer()
+                        
+                        Image(systemName: "chevron.right")
+                            .foregroundColor(.gray)
+                            .font(.system(size: 14))
+                            .padding(.trailing, 20)
+                    }
+                    .padding(.vertical, 15)
+                    .background(Color.white)
                 }
                 
                 Divider()
                     .padding(.leading, 60)
                 
-                MenuRow(icon: "info.circle", title: "About QSkipper") {
-                    print("Navigate to About")
+                NavigationLink {
+                    AboutView()
+                } label: {
+                    HStack {
+                        Image(systemName: "info.circle")
+                            .font(.system(size: 18))
+                            .foregroundColor(AppColors.primaryGreen)
+                            .frame(width: 24, height: 24)
+                            .padding(.leading, 20)
+                        
+                        Text("About QSkipper")
+                            .font(.system(size: 16))
+                            .foregroundColor(.black)
+                            .padding(.leading, 15)
+                        
+                        Spacer()
+                        
+                        Image(systemName: "chevron.right")
+                            .foregroundColor(.gray)
+                            .font(.system(size: 14))
+                            .padding(.trailing, 20)
+                    }
+                    .padding(.vertical, 15)
+                    .background(Color.white)
                 }
             }
             .background(Color.white)
@@ -176,14 +188,14 @@ struct ProfileView: View {
         } label: {
             HStack {
                 Image(systemName: "rectangle.portrait.and.arrow.right")
-                    .foregroundColor(.red)
+                    .foregroundColor(.white)
                 
                 Text("Logout")
-                    .foregroundColor(.red)
+                    .foregroundColor(.white)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 15)
-            .background(Color.white)
+            .background(Color.red)
             .cornerRadius(8)
             .overlay(
                 RoundedRectangle(cornerRadius: 8)

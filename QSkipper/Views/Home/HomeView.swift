@@ -199,6 +199,7 @@ struct HomeView: View {
                     FavoritesView()
                         .environmentObject(favoriteManager)
                         .environmentObject(orderManager)
+                        .environmentObject(TabSelection.shared)
                         .navigationBarHidden(true)
                 case .orders:
                     UserOrdersView()
@@ -271,13 +272,48 @@ struct HomeView: View {
                 LocationPickerView(onSelect: { newLocation in
                     locationManager.locationName = newLocation
                     isLoadingLocation = false
+                    // Dismiss the LocationPickerView
+                    showLocationPicker = false
                 })
+                .navigationBarBackButtonHidden(true)
             , isActive: $showLocationPicker) {
                 EmptyView()
             }
         )
         .onAppear {
+            print("📱 HomeView: View appeared")
+            print("📱 HomeView: Current tab: \(selectedTab)")
+            print("🛒 HomeView: Cart sheet state: \(showCartSheet)")
+            
             loadData()
+            
+            // Add notification observer for cart opening
+            print("🔔 HomeView: Setting up OpenCart notification observer")
+            NotificationCenter.default.addObserver(
+                forName: NSNotification.Name("OpenCart"),
+                object: nil,
+                queue: .main
+            ) { _ in
+                print("🔔 HomeView: Received OpenCart notification")
+                print("🛒 HomeView: Setting showCartSheet to true")
+                showCartSheet = true
+            }
+        }
+        .onDisappear {
+            print("📱 HomeView: View disappeared")
+            print("🔔 HomeView: Removing OpenCart notification observer")
+            // Remove notification observer when view disappears
+            NotificationCenter.default.removeObserver(
+                self,
+                name: NSNotification.Name("OpenCart"),
+                object: nil
+            )
+        }
+        .onChange(of: selectedTab) { newTab in
+            print("🔄 HomeView: Tab changed to: \(newTab)")
+        }
+        .onChange(of: showCartSheet) { newValue in
+            print("🛒 HomeView: Cart sheet state changed to: \(newValue)")
         }
         .alert(isPresented: $viewModel.showError) {
             Alert(
@@ -314,7 +350,7 @@ struct HomeView: View {
                         } label: {
                             HStack {
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text("DELIVER TO")
+                                    Text("ORDER FROM")
                                         .font(.system(size: 10))
                                         .foregroundColor(.gray)
                                     

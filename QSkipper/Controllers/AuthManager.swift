@@ -232,8 +232,11 @@ class AuthManager: ObservableObject {
                 
                 return true
             } else if let id = response.id {
+                // Get username from the response or use provided username from registration
+                let username = response.username ?? userDefaultsManager.getUserName() ?? "User"
+                
                 // If we only got an ID, create minimal user data
-                let user = User(id: id, email: email, name: nil, phone: nil, token: response.token)
+                let user = User(id: id, email: email, name: username, phone: nil, token: response.token)
                 userDefaultsManager.saveUser(user)
                 
                 // Update login status

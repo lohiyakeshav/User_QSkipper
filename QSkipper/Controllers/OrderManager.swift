@@ -68,25 +68,33 @@ class OrderManager: ObservableObject {
     
     // Add item to cart
     func addToCart(product: Product, quantity: Int = 1) {
+        print("🛒 OrderManager: Adding to cart - \(product.name) (ID: \(product.id), restaurantId: \(product.restaurantId))")
+        
         // Check if we already have items from a different restaurant
         if let currentRestaurantId = currentRestaurantId, currentRestaurantId != product.restaurantId {
+            print("⚠️ OrderManager: Clearing cart - adding item from different restaurant")
             // Clear cart if we're adding from a different restaurant
             clearCart()
         }
         
         // Set current restaurant
         self.currentRestaurantId = product.restaurantId
+        print("🏪 OrderManager: Current restaurant ID set to \(product.restaurantId)")
         
         // Check if the product is already in the cart
         if let index = currentCart.firstIndex(where: { $0.productId == product.id }) {
             // Update quantity
+            print("🔄 OrderManager: Updating existing cart item - current quantity: \(currentCart[index].quantity)")
             currentCart[index].quantity += quantity
+            print("🔄 OrderManager: New quantity: \(currentCart[index].quantity)")
         } else {
             // Add new item
             let newItem = CartItem(productId: product.id, product: product, quantity: quantity)
             currentCart.append(newItem)
+            print("➕ OrderManager: Added new cart item with quantity \(quantity)")
         }
         
+        print("📊 OrderManager: Cart now has \(currentCart.count) unique items, total quantity: \(getTotalItems())")
         saveCart()
     }
     

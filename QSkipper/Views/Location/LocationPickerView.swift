@@ -9,9 +9,10 @@ import SwiftUI
 import MapKit
 
 struct LocationPickerView: View {
-    @State private var navigateBack = false
+    @Environment(\.presentationMode) var presentationMode
     @StateObject private var locationManager = LocationManager.shared
     var onSelect: (String) -> Void
+    @State private var navigateToHome = false
     
     @State private var region = MKCoordinateRegion(
         center: CLLocationCoordinate2D(
@@ -33,10 +34,10 @@ struct LocationPickerView: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            // Header with back button
+            // Header with custom back button
             HStack {
                 Button {
-                    navigateBack = true
+                    presentationMode.wrappedValue.dismiss()
                 } label: {
                     Image(systemName: "arrow.left")
                         .font(.system(size: 18))
@@ -102,9 +103,11 @@ struct LocationPickerView: View {
             
             // Current location
             Button {
+                // Update location and dismiss the view
                 locationManager.requestLocation()
                 onSelect(locationManager.locationName)
-                navigateBack = true
+                // Dismiss this view
+                presentationMode.wrappedValue.dismiss()
             } label: {
                 HStack {
                     Image(systemName: "location.fill")
@@ -137,8 +140,10 @@ struct LocationPickerView: View {
                 
                 ForEach(popularLocations, id: \.self) { location in
                     Button {
+                        // Update location and dismiss the view
                         onSelect(location)
-                        navigateBack = true
+                        // Dismiss this view
+                        presentationMode.wrappedValue.dismiss()
                     } label: {
                         HStack {
                             Image(systemName: "mappin.and.ellipse")
@@ -168,11 +173,7 @@ struct LocationPickerView: View {
             locationManager.requestLocation()
         }
         .background(Color.gray.opacity(0.1).edgesIgnoringSafeArea(.all))
-        .background(
-            NavigationLink(destination: EmptyView(), isActive: $navigateBack) {
-                EmptyView()
-            }
-        )
+        .navigationBarBackButtonHidden(true)
     }
 }
 

@@ -30,6 +30,11 @@ class RegisterViewModel: ObservableObject {
         isLoading = true
         
         do {
+            // Save user name to UserDefaults before API call
+            // This ensures the name is available during OTP verification
+            UserDefaultsManager.shared.saveUserName(name)
+            print("📝 Saved username during registration: \(name)")
+            
             // Pass empty string for phone since we removed that field
             let receivedOTP = try await authManager.registerUser(email: email, name: name, phone: "")
             

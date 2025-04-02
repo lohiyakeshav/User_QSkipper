@@ -3,6 +3,7 @@ import SwiftUI
 struct FavoritesView: View {
     @EnvironmentObject var favoriteManager: FavoriteManager
     @EnvironmentObject var orderManager: OrderManager
+    @EnvironmentObject var tabSelection: TabSelection
     
     var body: some View {
         NavigationView {
@@ -15,10 +16,22 @@ struct FavoritesView: View {
                         
                         Spacer()
                         
-                        // Cart button
-                        NavigationLink(destination: CartView()
-                            .environmentObject(orderManager)
-                            .environmentObject(TabSelection.shared)) {
+                        // Cart button - switch to home tab and then access cart
+                        Button {
+                            print("🛒 FavoritesView: Cart button tapped")
+                            print("📱 FavoritesView: Current tab before switch: \(tabSelection.selectedTab)")
+                            
+                            // First switch to home tab where cart access works
+                            tabSelection.selectedTab = .home
+                            print("🔄 FavoritesView: Tab switched to home")
+                            
+                            // Small delay to ensure tab switch completes
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                print("🔔 FavoritesView: Posting OpenCart notification")
+                                // Post notification to open cart
+                                NotificationCenter.default.post(name: NSNotification.Name("OpenCart"), object: nil)
+                            }
+                        } label: {
                             ZStack(alignment: .topTrailing) {
                                 Circle()
                                     .fill(AppColors.primaryGreen.opacity(0.1))
@@ -83,11 +96,15 @@ struct FavoritesView: View {
                 Color.clear.frame(height: 1)
             }
             .onAppear {
-                // Debug favorites
+                print("📱 FavoritesView: View appeared")
                 print("🔍 FAVORITES: \(favoriteManager.favoriteDishes.count) dishes")
                 favoriteManager.favoriteDishes.forEach { product in
                     print("  - \(product.name)")
                 }
+                print("🛒 FavoritesView: Cart state - Items: \(orderManager.currentCart.count)")
+            }
+            .onDisappear {
+                print("📱 FavoritesView: View disappeared")
             }
         }
     }

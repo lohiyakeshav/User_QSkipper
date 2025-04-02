@@ -309,7 +309,8 @@ struct RestaurantDetailView: View {
                         MenuProductCard(
                             product: product,
                             addToCart: {
-                                orderManager.addToCart(product: product)
+                                print("🛒 RestaurantDetailView: Adding to cart - \(product.name) (ID: \(product.id))")
+                                // The actual cart addition is now handled directly in the MenuProductCard
                             }
                         )
                         .frame(minHeight: 260)
@@ -494,8 +495,12 @@ struct MenuProductCard: View {
                 } else {
                     // Show Add button
                     Button {
-                        addToCart()
+                        // Change the order of operations to match FavoritesView
                         quantity = 1
+                        orderManager.addToCart(product: product)
+                        // Then call the closure for any additional actions
+                        addToCart()
+                        
                         withAnimation {
                             showingAddedToast = true
                         }

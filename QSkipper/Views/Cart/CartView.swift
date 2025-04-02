@@ -302,7 +302,7 @@ struct CartContentView: View {
                             .padding(.vertical, 16)
                             .disabled(controller.isProcessing || orderManager.currentCart.isEmpty)
                         }
-                        .padding(.bottom, 20)
+                        .padding(.bottom, 40)
                     }
                 }
             }

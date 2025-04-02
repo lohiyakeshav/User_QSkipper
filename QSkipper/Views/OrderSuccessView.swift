@@ -40,23 +40,23 @@ struct OrderSuccessView: View {
                         .font(.system(size: 18))
                 }
                 
-                Spacer()
+                //Spacer()
                 
-                // My Orders button at bottom
-                NavigationLink(destination: MyOrdersView()
-                    .environmentObject(cartManager)
-                    .environmentObject(tabSelection)
-                ) {
-                    Text("MY ORDERS")
-                        .foregroundColor(.white)
-                        .font(.system(size: 17, weight: .bold))
-                        .padding()
-                        .frame(maxWidth: .infinity)
-                        .background(AppColors.primaryGreen)
-                        .cornerRadius(50)
-                }
+//                // My Orders button at bottom
+//                NavigationLink(destination: MyOrdersView()
+//                    .environmentObject(cartManager)
+//                    .environmentObject(tabSelection)
+//                ) {
+//                    Text("MY ORDERS")
+//                        .foregroundColor(.white)
+//                        .font(.system(size: 17, weight: .bold))
+//                        .padding()
+//                        .frame(maxWidth: .infinity)
+//                        .background(AppColors.primaryGreen)
+//                        .cornerRadius(50)
+//                }
                 .padding(.horizontal)
-                .padding(.bottom, 80)
+                .padding(.bottom, 350)
             }
         }
         .navigationBarBackButtonHidden(true)

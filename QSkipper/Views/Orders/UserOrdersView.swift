@@ -151,21 +151,6 @@ struct OrderCard: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
             
-            // View menu button
-            NavigationLink(destination: RestaurantDetailView(restaurantId: order.restaurantId)) {
-                HStack {
-                    Text("View menu")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(AppColors.primaryGreen)
-                    
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 12))
-                        .foregroundColor(AppColors.primaryGreen)
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 12)
-            
             Divider()
             
             // Order items
@@ -201,16 +186,10 @@ struct OrderCard: View {
                 }
                 
                 HStack {
-                    // Order status with icon
-                    HStack(spacing: 4) {
-                        Image(systemName: getOrderStatusIcon(for: order.status))
-                            .foregroundColor(getOrderStatusColor(for: order.status))
-                            .font(.system(size: 12))
-                        
-                        Text(getOrderStatusText(for: order.status))
-                            .font(.system(size: 14))
-                            .foregroundColor(.gray)
-                    }
+                    // Order status with icon - removing emoji/icon as requested
+                    Text(getOrderStatusText(for: order.status))
+                        .font(.system(size: 14))
+                        .foregroundColor(.gray)
                     
                     Spacer()
                     
@@ -357,7 +336,7 @@ struct OrderCard: View {
         case "cancelled":
             return "xmark.circle"
         default:
-            return order.takeAway ? "bag.fill" : "takeoutbag.and.cup.and.straw.fill"
+            return order.takeAway ? "" : "takeoutbag.and.cup.and.straw.fill"
         }
     }
     
@@ -391,7 +370,7 @@ struct OrderCard: View {
         case "cancelled":
             return "Cancelled"
         default:
-            return order.takeAway ? "Delivered" : "Picked up"
+            return order.takeAway ? "" : "Picked up"
         }
     }
     
