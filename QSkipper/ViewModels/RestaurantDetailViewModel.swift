@@ -41,7 +41,33 @@ class RestaurantDetailViewModel: ObservableObject {
         Task {
             do {
                 print("Loading products for restaurant: \(restaurantId)")
-                let fetchedProducts = try await networkUtils.fetchProducts(for: restaurantId)
+                var fetchedProducts = try await networkUtils.fetchProducts(for: restaurantId)
+                
+                // CRITICAL FIX: Ensure all products have the correct restaurantId
+                // This fixes the issue where some products might have empty or incorrect restaurantIds
+                if !fetchedProducts.isEmpty {
+                    for i in 0..<fetchedProducts.count {
+                        if fetchedProducts[i].restaurantId.isEmpty {
+                            // Copy the product with corrected restaurantId
+                            let product = fetchedProducts[i]
+                            let correctedProduct = Product(
+                                id: product.id,
+                                name: product.name,
+                                description: product.description,
+                                price: product.price,
+                                restaurantId: restaurantId, // Set the correct restaurantId
+                                category: product.category,
+                                isAvailable: product.isAvailable,
+                                rating: product.rating,
+                                extraTime: product.extraTime,
+                                photoId: product.photoId,
+                                isVeg: product.isVeg
+                            )
+                            fetchedProducts[i] = correctedProduct
+                            print("⚠️ Fixed empty restaurantId for product: \(correctedProduct.name)")
+                        }
+                    }
+                }
                 
                 await MainActor.run {
                     self.products = fetchedProducts

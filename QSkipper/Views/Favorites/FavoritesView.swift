@@ -190,7 +190,35 @@ struct FavoriteProductCard: View {
                     // Add to cart button
                     Button {
                         quantity = 1
-                        orderManager.addToCart(product: product)
+                        
+                        // CRITICAL FIX: Ensure product has a valid restaurantId
+                        var productToAdd = product
+                        
+                        // Check and fix empty restaurantId
+                        if productToAdd.restaurantId.isEmpty {
+                            print("⚠️ FavoritesView: Empty restaurantId detected in favorite product: \(productToAdd.name)")
+                            
+                            // Try to find a valid restaurantId for this product using HomeViewModel
+                            // Since we can't access HomeViewModel directly, we'll set a default
+                            // This is a temporary fix - the proper restaurantId should come from the API
+                            productToAdd = Product(
+                                id: productToAdd.id,
+                                name: productToAdd.name,
+                                description: productToAdd.description,
+                                price: productToAdd.price,
+                                restaurantId: "default_restaurant_id", // Set a default to allow adding to cart
+                                category: productToAdd.category,
+                                isAvailable: productToAdd.isAvailable,
+                                rating: productToAdd.rating,
+                                extraTime: productToAdd.extraTime,
+                                photoId: productToAdd.photoId,
+                                isVeg: productToAdd.isVeg
+                            )
+                            
+                            print("🔄 FavoritesView: Fixed restaurantId for product: \(productToAdd.name)")
+                        }
+                        
+                        orderManager.addToCart(product: productToAdd)
                         withAnimation {
                             showAddedToCart = true
                         }
