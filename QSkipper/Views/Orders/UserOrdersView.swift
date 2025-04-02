@@ -174,15 +174,26 @@ struct OrderCard: View {
             // Order details
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    Text("Order placed on \(formattedDate(order.time))")
-                        .font(.system(size: 14))
-                        .foregroundColor(.gray)
-                    
                     Spacer()
                     
                     Text("₹\(order.totalAmount)")
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundColor(AppColors.primaryGreen)
+                }
+                
+                // Add scheduled date display if available
+                if let scheduleDate = order.scheduleDate {
+                    HStack {
+                        Image(systemName: "calendar")
+                            .foregroundColor(AppColors.primaryGreen)
+                            .font(.system(size: 14))
+                        
+                        Text("Scheduled for \(formattedDate(scheduleDate))")
+                            .font(.system(size: 14))
+                            .foregroundColor(AppColors.darkGray)
+                        
+                        Spacer()
+                    }
                 }
                 
                 HStack {
