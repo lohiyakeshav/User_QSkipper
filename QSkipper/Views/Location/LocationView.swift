@@ -116,6 +116,12 @@ struct LocationView: View {
             locationManager.requestLocation()
         }
         .navigationBarBackButtonHidden(true)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                // Empty space to prevent default back button from showing
+                EmptyView()
+            }
+        }
         .background(
             NavigationLink(
                 destination: HomeView().navigationBarBackButtonHidden(true),

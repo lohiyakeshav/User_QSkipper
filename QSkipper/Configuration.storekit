@@ -1,0 +1,35 @@
+{
+  "identifier" : "9B7BFCF4",
+  "nonRenewingSubscriptions" : [
+
+  ],
+  "products" : [
+    {
+      "displayPrice" : "140.00",
+      "familyShareable" : false,
+      "internalID" : "6F7A8B9C",
+      "localizations" : [
+        {
+          "description" : "Payment for your food order",
+          "displayName" : "Order Payment",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "com.queueskipper.orderpayment",
+      "referenceName" : "Order Payment",
+      "type" : "Consumable"
+    }
+  ],
+  "settings" : {
+    "_applicationInternalID" : "1234567890",
+    "_developerTeamID" : "ABCDEF1234",
+    "_lastSynchronizedDate" : 710262145.87665796
+  },
+  "subscriptionGroups" : [
+
+  ],
+  "version" : {
+    "major" : 3,
+    "minor" : 0
+  }
+} 

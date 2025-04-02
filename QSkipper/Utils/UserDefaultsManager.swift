@@ -14,7 +14,7 @@ class UserDefaultsManager {
     
     // Keys
     private let tokenKey = "user_token"
-    private let userIdKey = "user_id"
+    private let userIdKey = "userID"
     private let userEmailKey = "user_email"
     private let userNameKey = "user_name"
     private let userPhoneKey = "user_phone"

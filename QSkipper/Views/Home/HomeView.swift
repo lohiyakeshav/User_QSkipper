@@ -11,6 +11,7 @@ import SwiftUI
 enum Tab {
     case home
     case favorites
+    case orders
     case profile
 }
 
@@ -199,6 +200,11 @@ struct HomeView: View {
                         .environmentObject(favoriteManager)
                         .environmentObject(orderManager)
                         .navigationBarHidden(true)
+                case .orders:
+                    UserOrdersView()
+                        .environmentObject(orderManager)
+                        .environmentObject(TabSelection.shared)
+                        .navigationBarHidden(true)
                 case .profile:
                     ProfileView()
                         .navigationBarHidden(true)
@@ -214,12 +220,21 @@ struct HomeView: View {
                     TabBarItem(icon: "house.fill", label: "Home", isSelected: selectedTab == .home) {
                         withAnimation {
                             selectedTab = .home
+                            TabSelection.shared.selectedTab = .home
                         }
                     }
                     
                     TabBarItem(icon: "heart.fill", label: "Favorites", isSelected: selectedTab == .favorites) {
                         withAnimation {
                             selectedTab = .favorites
+                            TabSelection.shared.selectedTab = .favorites
+                        }
+                    }
+                    
+                    TabBarItem(icon: "list.bullet", label: "Orders", isSelected: selectedTab == .orders) {
+                        withAnimation {
+                            selectedTab = .orders
+                            TabSelection.shared.selectedTab = .orders
                         }
                     }
                     
@@ -234,6 +249,7 @@ struct HomeView: View {
                                 print("👤 User data before tab switch: name=\(userName ?? "nil"), id=\(userId ?? "nil")")
                             }
                             selectedTab = .profile
+                            TabSelection.shared.selectedTab = .profile
                         }
                     }
                 }
@@ -244,7 +260,9 @@ struct HomeView: View {
             .edgesIgnoringSafeArea(.bottom)
         }
         .background(
-            NavigationLink(destination: CartView(), isActive: $showCartSheet) {
+            NavigationLink(destination: CartView()
+                .environmentObject(orderManager)
+                .environmentObject(TabSelection.shared), isActive: $showCartSheet) {
                 EmptyView()
             }
         )
@@ -284,40 +302,42 @@ struct HomeView: View {
     
     // Home content view
     private var homeContent: some View {
-        ScrollView {
-            VStack(spacing: 0) {
-                // Header section
-                VStack(spacing: 8) {
-                    // Location Header with centered cart button
+        NavigationView {
+            ScrollView {
+                VStack(spacing: 0) {
+                    // Top bar with location and cart
                     HStack {
-                        // Location button
+                        // Location selector button
                         Button {
+                            isLoadingLocation = true
                             showLocationPicker = true
                         } label: {
                             HStack {
-                                Image(systemName: "location.fill")
-                                    .foregroundColor(AppColors.primaryGreen)
-                                
-                                VStack(alignment: .leading) {
-                                    Text("Delivery to")
-                                        .font(.system(size: 12))
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("DELIVER TO")
+                                        .font(.system(size: 10))
                                         .foregroundColor(.gray)
                                     
-                                    Text(locationManager.locationName)
-                                        .font(.system(size: 14, weight: .medium))
-                                        .foregroundColor(.black)
+                                    HStack(spacing: 4) {
+                                        Text("\(locationManager.locationName)")
+                                            .font(.system(size: 14, weight: .medium))
+                                            .foregroundColor(.black)
+                                        
+                                        Image(systemName: "chevron.down")
+                                            .font(.system(size: 12))
+                                            .foregroundColor(.black)
+                                    }
                                 }
                                 
-                                Image(systemName: "chevron.down")
-                                    .foregroundColor(AppColors.primaryGreen)
-                                    .font(.system(size: 12))
+                                Spacer()
                             }
                         }
                         
                         Spacer()
                         
-                        // Cart button
-                        NavigationLink(destination: CartView()) {
+                        NavigationLink(destination: CartView()
+                            .environmentObject(orderManager)
+                            .environmentObject(TabSelection.shared)) {
                             ZStack(alignment: .topTrailing) {
                                 Circle()
                                     .fill(AppColors.primaryGreen.opacity(0.1))
@@ -369,11 +389,13 @@ struct HomeView: View {
                     
                     // ALL RESTAURANTS SECTION
                     restaurantsSection
+                    
+                    // Add bottom padding to ensure content isn't hidden behind the tab bar
+                    Spacer(minLength: 100)
                 }
             }
-            .padding(.bottom, 90) // Extra padding for tab bar
+            .background(Color.white)
         }
-        .background(Color.white)
         // Pull to refresh
         .refreshable {
             await loadData()

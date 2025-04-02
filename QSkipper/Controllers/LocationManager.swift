@@ -30,16 +30,18 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         super.init()
         locationManager.delegate = self
         locationManager.desiredAccuracy = kCLLocationAccuracyBest
-        checkLocationServices()
+        // We'll let the delegate callbacks handle the authorization status
+        // rather than checking on init, which could cause UI unresponsiveness
+        setupLocationManager()
     }
     
     func checkLocationServices() {
-        if CLLocationManager.locationServicesEnabled() {
-            setupLocationManager()
-        } else {
-            isLocationServiceAvailable = false
-            error = "Location services are disabled"
-        }
+        // This method is kept for backward compatibility but implementation is changed
+        // to avoid UI unresponsiveness
+        setupLocationManager()
+        
+        // Request authorization which will trigger the delegate callback
+        locationManager.requestWhenInUseAuthorization()
     }
     
     func setupLocationManager() {
@@ -79,24 +81,32 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         self.locationStatus = manager.authorizationStatus
         
-        switch manager.authorizationStatus {
-        case .authorizedWhenInUse, .authorizedAlways:
-            self.isLocationServiceAvailable = true
-            // Request a one-time location update instead of starting continuous updates
-            self.locationManager.requestLocation()
-        case .denied, .restricted:
+        // Check if location services are enabled system-wide first
+        if CLLocationManager.locationServicesEnabled() {
+            switch manager.authorizationStatus {
+            case .authorizedWhenInUse, .authorizedAlways:
+                self.isLocationServiceAvailable = true
+                // Request a one-time location update instead of starting continuous updates
+                self.locationManager.requestLocation()
+            case .denied, .restricted:
+                self.isLocationServiceAvailable = false
+                self.error = "Location access denied"
+                // Use default location (Galgotias University)
+                self.location = self.defaultLocation
+                self.getPlaceName(for: self.defaultLocation)
+            case .notDetermined:
+                self.isLocationServiceAvailable = false
+                // We'll wait for the user to trigger requestLocation() explicitly or for a response to our authorization request
+            @unknown default:
+                self.isLocationServiceAvailable = false
+                self.error = "Unknown location authorization status"
+            }
+        } else {
+            // Location services are disabled system-wide
             self.isLocationServiceAvailable = false
-            self.error = "Location access denied"
-            // Use default location (Galgotias University)
+            self.error = "Location services are disabled"
             self.location = self.defaultLocation
             self.getPlaceName(for: self.defaultLocation)
-        case .notDetermined:
-            self.isLocationServiceAvailable = false
-            // Don't request authorization here again - it would create a loop
-            // We'll wait for the user to trigger requestLocation() explicitly
-        @unknown default:
-            self.isLocationServiceAvailable = false
-            self.error = "Unknown location authorization status"
         }
     }
     

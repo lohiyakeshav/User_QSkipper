@@ -8,10 +8,38 @@ struct FavoritesView: View {
         NavigationView {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    Text("Your Favorite Dishes")
-                        .font(AppFonts.title)
-                        .padding(.horizontal, 20)
-                        .padding(.top, 20)
+                    // Header with title and cart button
+                    HStack {
+                        Text("Your Favorite Dishes")
+                            .font(AppFonts.title)
+                        
+                        Spacer()
+                        
+                        // Cart button
+                        NavigationLink(destination: CartView()
+                            .environmentObject(orderManager)
+                            .environmentObject(TabSelection.shared)) {
+                            ZStack(alignment: .topTrailing) {
+                                Circle()
+                                    .fill(AppColors.primaryGreen.opacity(0.1))
+                                    .frame(width: 38, height: 38)
+                                
+                                Image(systemName: "cart.fill")
+                                    .font(.system(size: 18))
+                                    .foregroundColor(AppColors.primaryGreen)
+                                    .frame(width: 20, height: 20)
+                                    .padding(9)
+                                
+                                // Show badge only if items in cart
+                                if !orderManager.currentCart.isEmpty {
+                                    CartBadge(count: orderManager.getTotalItems())
+                                        .offset(x: 6, y: -6)
+                                }
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.top, 20)
                     
                     if favoriteManager.favoriteDishes.isEmpty {
                         VStack(spacing: 20) {
@@ -42,11 +70,11 @@ struct FavoritesView: View {
                         .padding(.horizontal, 20)
                     }
                     
-                    Spacer(minLength: 100) // Extra space for tab bar
+                    // Add bottom padding for tab bar
+                    Spacer(minLength: 100)
                 }
             }
-            .navigationTitle("Favorites")
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationBarHidden(true)
             .background(Color.white)
             .safeAreaInset(edge: .top) {
                 Color.clear.frame(height: 0)
@@ -69,6 +97,7 @@ struct FavoriteProductCard: View {
     @EnvironmentObject var favoriteManager: FavoriteManager
     @EnvironmentObject var orderManager: OrderManager
     @State private var showAddedToCart = false
+    @State private var quantity = 0
     let product: Product
     
     var body: some View {
@@ -102,28 +131,69 @@ struct FavoriteProductCard: View {
                     .font(.system(size: 14, weight: .bold))
                     .foregroundColor(AppColors.primaryGreen)
                 
-                // Add to cart button
-                Button {
-                    orderManager.addToCart(product: product)
-                    withAnimation {
-                        showAddedToCart = true
-                    }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                        withAnimation {
-                            showAddedToCart = false
+                // Add to cart or quantity controls
+                if quantity > 0 {
+                    // Show quantity controls
+                    HStack {
+                        Button {
+                            if quantity > 1 {
+                                quantity -= 1
+                                orderManager.updateCartItemQuantity(productId: product.id, quantity: quantity)
+                            } else {
+                                quantity = 0
+                                orderManager.removeFromCart(productId: product.id)
+                            }
+                        } label: {
+                            Image(systemName: "minus")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(.white)
+                                .frame(width: 28, height: 28)
+                                .background(AppColors.primaryGreen)
+                                .clipShape(RoundedRectangle(cornerRadius: 4))
+                        }
+                        
+                        Text("\(quantity)")
+                            .font(.system(size: 14, weight: .semibold))
+                            .frame(minWidth: 30)
+                        
+                        Button {
+                            quantity += 1
+                            orderManager.updateCartItemQuantity(productId: product.id, quantity: quantity)
+                        } label: {
+                            Image(systemName: "plus")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(.white)
+                                .frame(width: 28, height: 28)
+                                .background(AppColors.primaryGreen)
+                                .clipShape(RoundedRectangle(cornerRadius: 4))
                         }
                     }
-                } label: {
-                    HStack {
-                        Spacer()
-                        Text(showAddedToCart ? "Added!" : "Add to Cart")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(.white)
-                        Spacer()
+                    .frame(maxWidth: .infinity)
+                } else {
+                    // Add to cart button
+                    Button {
+                        quantity = 1
+                        orderManager.addToCart(product: product)
+                        withAnimation {
+                            showAddedToCart = true
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                            withAnimation {
+                                showAddedToCart = false
+                            }
+                        }
+                    } label: {
+                        HStack {
+                            Spacer()
+                            Text(showAddedToCart ? "Added!" : "Add to Cart")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundColor(.white)
+                            Spacer()
+                        }
+                        .padding(.vertical, 6)
+                        .background(showAddedToCart ? Color.green : AppColors.primaryGreen)
+                        .cornerRadius(8)
                     }
-                    .padding(.vertical, 6)
-                    .background(showAddedToCart ? Color.green : AppColors.primaryGreen)
-                    .cornerRadius(8)
                 }
             }
             .padding(.horizontal, 8)
@@ -132,5 +202,9 @@ struct FavoriteProductCard: View {
         .background(Color.white)
         .cornerRadius(12)
         .shadow(color: Color.black.opacity(0.1), radius: 4, y: 2)
+        .onAppear {
+            // Check if already in cart
+            quantity = orderManager.getQuantityInCart(productId: product.id)
+        }
     }
 } 

@@ -11,44 +11,90 @@ struct CartView: View {
     @Environment(\.presentationMode) var presentationMode
     @EnvironmentObject private var orderManager: OrderManager
     @StateObject private var controller = CartViewController()
+    @Environment(\.dismiss) private var dismiss
+    @State private var showPaymentView = false
+    @State private var showCancelAlert = false
+    @State private var showPaymentError = false
+    @State private var errorMessage = ""
+    
+    // Get current user ID from your custom auth system
+    private var currentUserId: String {
+        UserDefaults.standard.string(forKey: "userId") ?? ""
+    }
     
     var body: some View {
-        ScrollView {
+        ZStack {
             VStack(spacing: 0) {
-                if orderManager.currentCart.isEmpty {
-                    emptyCartView
-                } else {
-                    // Order Summary Header
-                    headerView
-                    
-                    // Order Type Selection Pills
-                    orderTypeSelectionView
-                    
-                    // Cart Items 
-                    cartItemsListView
-                    
-                    // Add more button (divider line)
-                    addMoreButtonView
-                    
-                    // Delivery Options
-                    deliveryOptionsView
-                    
-                    // Restaurant Details
-                    if let restaurant = controller.restaurant {
-                        restaurantDetailsView(restaurant: restaurant)
+                // Custom navigation bar
+                HStack {
+                    Button {
+                        presentationMode.wrappedValue.dismiss()
+                    } label: {
+                        Image(systemName: "chevron.left")
+                            .foregroundColor(AppColors.primaryGreen)
+                            .font(.system(size: 18, weight: .semibold))
                     }
                     
-                    // Bill Details
-                    billDetailsView
+                    Spacer()
                     
-                    Spacer(minLength: 80)
+                    Text("Your Cart")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(AppColors.darkGray)
+                    
+                    Spacer()
+                    
+                    // Empty view for balance
+                    Color.clear
+                        .frame(width: 24, height: 24)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(Color.white)
+                
+                Divider()
+                
+                // Main cart content
+                CartContentView(
+                    orderManager: orderManager,
+                    controller: controller,
+                    showPaymentView: $showPaymentView,
+                    showCancelAlert: $showCancelAlert,
+                    showPaymentError: $showPaymentError,
+                    errorMessage: $errorMessage,
+                    currentUserId: currentUserId,
+                    presentationMode: presentationMode
+                )
+            }
+            
+            if controller.showOrderSuccess {
+                // Present the OrderSuccessView as a full screen overlay
+                Color.white
+                    .ignoresSafeArea()
+                    .overlay(
+                        OrderSuccessView(
+                            cartManager: orderManager,
+                            orderId: controller.orderId
+                        )
+                        .environmentObject(TabSelection.shared)
+                    )
+            }
+            
+            if controller.isProcessing {
+                Color.black.opacity(0.4)
+                    .edgesIgnoringSafeArea(.all)
+                
+                VStack(spacing: 20) {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                        .scaleEffect(1.5)
+                    
+                    Text("Processing payment...")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(.white)
                 }
             }
         }
-        .navigationTitle("Your Cart")
-        .navigationBarTitleDisplayMode(.inline)
-        .overlay(paymentButtonOverlay)
-        .overlay(orderStatusOverlay)
+        .navigationBarHidden(true)
         .sheet(isPresented: $controller.showSchedulePicker) {
             SchedulePickerSheet(
                 selectedDate: $controller.scheduledDate,
@@ -56,13 +102,226 @@ struct CartView: View {
                 onConfirm: {}
             )
         }
-        .onAppear {
-            controller.loadRestaurantDetails()
+        .alert("Cancel Order?", isPresented: $showCancelAlert) {
+            Button("No", role: .cancel) { }
+            Button("Yes", role: .destructive) {
+                orderManager.clearCart()
+                presentationMode.wrappedValue.dismiss()
+            }
+        } message: {
+            Text("Are you sure you want to cancel your order?")
         }
+        .alert("Payment Error", isPresented: $showPaymentError) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(errorMessage)
+        }
+        .navigationDestination(isPresented: $controller.showPaymentView) {
+            Group {
+                if let orderRequest = controller.currentOrderRequest {
+                    // Use explicit argument labels to avoid order dependency
+                    let restaurantName = controller.restaurant?.name ?? "Restaurant"
+                    let totalAmount = controller.getTotalAmount()
+                    let tipAmount = Double(controller.selectedTipAmount) / 100 * totalAmount
+                    
+                    PaymentView(
+                        cartManager: orderManager,
+                        orderRequest: orderRequest,
+                        restaurantName: restaurantName,
+                        totalAmount: totalAmount,
+                        tipAmount: tipAmount,
+                        isScheduledOrder: controller.isSchedulingOrder,
+                        scheduledTime: controller.isSchedulingOrder ? controller.scheduledDate : nil
+                    )
+                } else {
+                    Text("Unable to process order")
+                        .foregroundColor(.red)
+                }
+            }
+        }
+        .onAppear {
+            // Load restaurant details
+            controller.loadRestaurantDetails()
+            // Hide tab bar when view appears
+            hideTabBar(true)
+            
+            // Add a slight delay to ensure the tab bar is hidden
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                hideTabBar(true)
+            }
+        }
+        .onDisappear {
+            // Show tab bar when view disappears
+            hideTabBar(false)
+        }
+        .ignoresSafeArea(.keyboard)
+        // Use the view modifier as an additional measure
+        .hideTabBar(true)
     }
     
-    // MARK: - Empty Cart View
-    private var emptyCartView: some View {
+    // Function to hide tab bar more reliably
+    private func hideTabBar(_ hidden: Bool) {
+        // Update UITabBar appearance
+        let tabBarAppearance = UITabBarAppearance()
+        if hidden {
+            tabBarAppearance.configureWithTransparentBackground()
+            tabBarAppearance.backgroundColor = UIColor.clear
+            tabBarAppearance.shadowColor = UIColor.clear
+            
+            // Make all colors transparent
+            tabBarAppearance.stackedLayoutAppearance.normal.iconColor = .clear
+            tabBarAppearance.stackedLayoutAppearance.normal.titleTextAttributes = [.foregroundColor: UIColor.clear]
+            tabBarAppearance.stackedLayoutAppearance.selected.iconColor = .clear
+            tabBarAppearance.stackedLayoutAppearance.selected.titleTextAttributes = [.foregroundColor: UIColor.clear]
+        } else {
+            tabBarAppearance.configureWithDefaultBackground()
+        }
+        
+        UITabBar.appearance().standardAppearance = tabBarAppearance
+        UITabBar.appearance().scrollEdgeAppearance = tabBarAppearance
+        
+        // Directly hide/show the tab bar using multiple approaches
+        DispatchQueue.main.async {
+            let scenes = UIApplication.shared.connectedScenes
+            let windowScenes = scenes.compactMap { $0 as? UIWindowScene }
+            for windowScene in windowScenes {
+                for window in windowScene.windows {
+                    // Approach 1: Direct access to tab bar controller
+                    if let rootViewController = window.rootViewController as? UITabBarController {
+                        // Hide both the tab bar and its items
+                        rootViewController.tabBar.isHidden = hidden
+                        rootViewController.tabBar.isTranslucent = hidden
+                        
+                        // Move tab bar off-screen if hidden
+                        if hidden {
+                            rootViewController.tabBar.frame.origin.y = UIScreen.main.bounds.height + 100
+                            // Make items invisible
+                            for item in rootViewController.tabBar.items ?? [] {
+                                item.isEnabled = false
+                                item.title = nil
+                                item.image = nil
+                                item.selectedImage = nil
+                            }
+                        } else {
+                            // Reset position
+                            rootViewController.tabBar.frame.origin.y = UIScreen.main.bounds.height - rootViewController.tabBar.frame.height
+                            // Restore items
+                            for item in rootViewController.tabBar.items ?? [] {
+                                item.isEnabled = true
+                            }
+                        }
+                    }
+                    
+                    // Approach 2: When tab bar controller is not the root
+                    if let tabBarController = window.rootViewController?.tabBarController {
+                        tabBarController.tabBar.isHidden = hidden
+                        tabBarController.tabBar.isTranslucent = hidden
+                        
+                        if hidden {
+                            tabBarController.tabBar.frame.origin.y = UIScreen.main.bounds.height + 100
+                            // Set user interaction enabled to false for all tab bar items
+                            for item in tabBarController.tabBar.items ?? [] {
+                                item.isEnabled = false
+                                item.title = nil
+                                item.image = nil
+                                item.selectedImage = nil
+                            }
+                        } else {
+                            // Reset position
+                            tabBarController.tabBar.frame.origin.y = UIScreen.main.bounds.height - tabBarController.tabBar.frame.height
+                            // Restore items
+                            for item in tabBarController.tabBar.items ?? [] {
+                                item.isEnabled = true
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Cart Content View
+struct CartContentView: View {
+    @ObservedObject var orderManager: OrderManager
+    @ObservedObject var controller: CartViewController
+    @Binding var showPaymentView: Bool
+    @Binding var showCancelAlert: Bool
+    @Binding var showPaymentError: Bool
+    @Binding var errorMessage: String
+    let currentUserId: String
+    let presentationMode: Binding<PresentationMode>
+    @EnvironmentObject private var tabSelection: TabSelection
+    
+    var body: some View {
+        ZStack {
+            Color(.systemBackground)
+                .ignoresSafeArea()
+            
+            if orderManager.currentCart.isEmpty {
+                EmptyCartView()
+            } else {
+                VStack(spacing: 0) {
+                    ScrollView {
+                        VStack(spacing: 0) {
+                            CartHeaderView()
+                            OrderTypeSelectionView(orderManager: orderManager)
+                            CartItemsListView(orderManager: orderManager)
+                            AddMoreButtonView(
+                                orderManager: orderManager,
+                                controller: controller,
+                                presentationMode: presentationMode
+                            )
+                            DeliveryOptionsView(controller: controller)
+                            
+                            if let restaurant = controller.restaurant {
+                                RestaurantDetailsView(restaurant: restaurant, controller: controller)
+                            }
+                            
+                            BillDetailsView(orderManager: orderManager, controller: controller)
+                            
+                            // Pay Now button inside ScrollView
+                            Button {
+                                print("🔄 Place Order button tapped")
+                                controller.placeOrder()
+                            } label: {
+                                if controller.isProcessing {
+                                    ProgressView()
+                                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                } else {
+                                    Text("Pay Now")
+                                        .font(.system(size: 16, weight: .semibold))
+                                }
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
+                            .background(orderManager.currentCart.isEmpty ? Color.gray : AppColors.primaryGreen)
+                            .foregroundColor(.white)
+                            .cornerRadius(12)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 16)
+                            .disabled(controller.isProcessing || orderManager.currentCart.isEmpty)
+                        }
+                        .padding(.bottom, 20)
+                    }
+                }
+            }
+        }
+        .onChange(of: controller.showPaymentView) { newValue in
+            print("🔄 showPaymentView changed to: \(newValue)")
+            showPaymentView = newValue
+            if newValue {
+                print("🎯 Attempting to navigate with orderRequest: \(String(describing: controller.currentOrderRequest))")
+            }
+        }
+    }
+}
+
+// MARK: - Empty Cart View
+struct EmptyCartView: View {
+    @EnvironmentObject private var tabSelection: TabSelection
+    
+    var body: some View {
         VStack(spacing: 20) {
             Spacer()
             
@@ -79,7 +338,10 @@ struct CartView: View {
                 .foregroundColor(AppColors.mediumGray)
                 .multilineTextAlignment(.center)
             
-            NavigationLink(destination: HomeView()) {
+            Button {
+                // Go to home tab to browse restaurants
+                tabSelection.selectedTab = .home
+            } label: {
                 Text("Browse Restaurants")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(.white)
@@ -95,9 +357,11 @@ struct CartView: View {
         .frame(height: 400)
         .padding(.top, 40)
     }
-    
-    // MARK: - Header View
-    private var headerView: some View {
+}
+
+// MARK: - Header View
+struct CartHeaderView: View {
+    var body: some View {
         HStack {
             Text("Order Summary")
                 .font(.system(size: 18, weight: .semibold))
@@ -108,9 +372,13 @@ struct CartView: View {
         }
         .padding(.vertical, 16)
     }
+}
+
+// MARK: - Order Type Selection
+struct OrderTypeSelectionView: View {
+    @ObservedObject var orderManager: OrderManager
     
-    // MARK: - Order Type Selection
-    private var orderTypeSelectionView: some View {
+    var body: some View {
         VStack(spacing: 16) {
             HStack {
                 Capsule()
@@ -156,79 +424,13 @@ struct CartView: View {
         .padding(.horizontal, 16)
         .padding(.bottom, 20)
     }
+}
+
+// MARK: - Cart Items List
+struct CartItemsListView: View {
+    @ObservedObject var orderManager: OrderManager
     
-    // MARK: - Delivery Options
-    private var deliveryOptionsView: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Delivery Options")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundColor(AppColors.darkGray)
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
-            
-            HStack(spacing: 10) {
-                // Now option
-                Button {
-                    controller.isSchedulingOrder = false
-                } label: {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Now")
-                            .font(.system(size: 15, weight: .medium))
-                            .foregroundColor(controller.isSchedulingOrder ? AppColors.darkGray : AppColors.primaryGreen)
-                        
-                        Text("As soon as possible")
-                            .font(.system(size: 12))
-                            .foregroundColor(AppColors.mediumGray)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, 12)
-                    .padding(.horizontal, 12)
-                    .background(controller.isSchedulingOrder ? Color.clear : Color.gray.opacity(0.1))
-                    .cornerRadius(8)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(controller.isSchedulingOrder ? Color.gray.opacity(0.3) : AppColors.primaryGreen, lineWidth: 1)
-                    )
-                }
-                
-                // Schedule option
-                Button {
-                    controller.showSchedulePicker = true
-                    controller.isSchedulingOrder = true
-                } label: {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Schedule")
-                            .font(.system(size: 15, weight: .medium))
-                            .foregroundColor(controller.isSchedulingOrder ? AppColors.primaryGreen : AppColors.darkGray)
-                        
-                        if controller.isSchedulingOrder {
-                            Text(formattedScheduleDate)
-                                .font(.system(size: 12))
-                                .foregroundColor(AppColors.mediumGray)
-                        } else {
-                            Text("Select time")
-                                .font(.system(size: 12))
-                                .foregroundColor(AppColors.mediumGray)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, 12)
-                    .padding(.horizontal, 12)
-                    .background(controller.isSchedulingOrder ? Color.gray.opacity(0.1) : Color.clear)
-                    .cornerRadius(8)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(controller.isSchedulingOrder ? AppColors.primaryGreen : Color.gray.opacity(0.3), lineWidth: 1)
-                    )
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 16)
-        }
-    }
-    
-    // MARK: - Cart Items List
-    private var cartItemsListView: some View {
+    var body: some View {
         VStack(spacing: 20) {
             ForEach(orderManager.currentCart.indices, id: \.self) { index in
                 let item = orderManager.currentCart[index]
@@ -257,6 +459,9 @@ struct CartView: View {
                         Button {
                             if item.quantity > 1 {
                                 orderManager.decrementItem(at: index)
+                            } else {
+                                // When quantity is 1, remove item from cart
+                                orderManager.removeFromCart(productId: item.productId)
                             }
                         } label: {
                             Text("−")
@@ -295,9 +500,15 @@ struct CartView: View {
         .padding(.vertical, 20)
         .background(Color.white)
     }
+}
+
+// MARK: - Add More Button
+struct AddMoreButtonView: View {
+    @ObservedObject var orderManager: OrderManager
+    @ObservedObject var controller: CartViewController
+    let presentationMode: Binding<PresentationMode>
     
-    // MARK: - Add More Button
-    private var addMoreButtonView: some View {
+    var body: some View {
         Button {
             presentationMode.wrappedValue.dismiss()
         } label: {
@@ -319,9 +530,94 @@ struct CartView: View {
             .padding(.top, 12)
         }
     }
+}
+
+// MARK: - Delivery Options
+struct DeliveryOptionsView: View {
+    @ObservedObject var controller: CartViewController
     
-    // MARK: - Restaurant Details
-    private func restaurantDetailsView(restaurant: Restaurant) -> some View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Delivery Options")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(AppColors.darkGray)
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+            
+            HStack(spacing: 10) {
+                // Now option
+                Button {
+                    controller.isSchedulingOrder = false
+                } label: {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Now")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundColor(controller.isSchedulingOrder ? AppColors.darkGray : AppColors.primaryGreen)
+                        
+                        Text("As soon as possible")
+                            .font(.system(size: 12))
+                            .foregroundColor(AppColors.mediumGray)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 12)
+                    .padding(.horizontal, 12)
+                    .background(controller.isSchedulingOrder ? Color.clear : Color.gray.opacity(0.1))
+                    .cornerRadius(8)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(controller.isSchedulingOrder ? Color.gray.opacity(0.3) : AppColors.primaryGreen, lineWidth: 1)
+                    )
+                }
+                
+                // Schedule option
+                Button {
+                    controller.showSchedulePicker = true
+                    controller.isSchedulingOrder = true
+                } label: {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Schedule Later")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundColor(controller.isSchedulingOrder ? AppColors.primaryGreen : AppColors.darkGray)
+                        
+                        if controller.isSchedulingOrder {
+                            Text(formattedScheduleDate(for: controller.scheduledDate))
+                                .font(.system(size: 12))
+                                .foregroundColor(AppColors.darkGray)
+                        } else {
+                            Text("Select time")
+                                .font(.system(size: 12))
+                                .foregroundColor(AppColors.mediumGray)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 12)
+                    .padding(.horizontal, 12)
+                    .background(controller.isSchedulingOrder ? Color.gray.opacity(0.1) : Color.clear)
+                    .cornerRadius(8)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(controller.isSchedulingOrder ? AppColors.primaryGreen : Color.gray.opacity(0.3), lineWidth: 1)
+                    )
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 16)
+        }
+    }
+    
+    private func formattedScheduleDate(for date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "d MMM, h:mm a"
+        return formatter.string(from: date)
+    }
+}
+
+// MARK: - Restaurant Details
+struct RestaurantDetailsView: View {
+    let restaurant: Restaurant
+    @ObservedObject var controller: CartViewController
+    
+    var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Restaurant Details")
                 .font(.system(size: 16, weight: .semibold))
@@ -383,7 +679,7 @@ struct CartView: View {
                                 }
                             }
                             
-                            Text(formattedScheduleDate)
+                            Text(formattedScheduleDate(for: controller.scheduledDate))
                                 .font(.system(size: 14, weight: .medium))
                                 .foregroundColor(AppColors.darkGray)
                         }
@@ -400,8 +696,19 @@ struct CartView: View {
         .background(Color.white)
     }
     
-    // MARK: - Bill Details
-    private var billDetailsView: some View {
+    private func formattedScheduleDate(for date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "d MMM, h:mm a"
+        return formatter.string(from: date)
+    }
+}
+
+// MARK: - Bill Details
+struct BillDetailsView: View {
+    @ObservedObject var orderManager: OrderManager
+    @ObservedObject var controller: CartViewController
+    
+    var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Bill Details")
                 .font(.system(size: 16, weight: .semibold))
@@ -449,128 +756,12 @@ struct CartView: View {
                     
                     Text("₹\(String(format: "%.2f", controller.getTotalAmount()))")
                         .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(AppColors.darkGray)
+                        .foregroundColor(AppColors.primaryGreen)
                 }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
         }
-    }
-    
-    // MARK: - Payment Button Overlay
-    private var paymentButtonOverlay: some View {
-        Group {
-            if !orderManager.currentCart.isEmpty {
-                // Bottom Payment Button
-                VStack {
-                    Spacer()
-                    
-                    HStack {
-                        // Total amount
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("₹\(String(format: "%.2f", controller.getTotalAmount()))")
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundColor(AppColors.darkGray)
-                            
-                            Text("Inc. Taxes and charges")
-                                .font(.system(size: 10))
-                                .foregroundColor(AppColors.mediumGray)
-                        }
-                        
-                        Spacer()
-                        
-                        // Pay button
-                        Button {
-                            controller.placeOrder()
-                        } label: {
-                            Text("Proceed to pay")
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 40)
-                                .padding(.vertical, 16)
-                                .background(AppColors.primaryGreen)
-                                .cornerRadius(8)
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 16)
-                    .background(Color.white)
-                    .shadow(color: Color.black.opacity(0.1), radius: 8, y: -4)
-                }
-            }
-        }
-    }
-    
-    // MARK: - Order Status Overlay
-    private var orderStatusOverlay: some View {
-        ZStack {
-            if controller.isProcessing {
-                Color.black.opacity(0.4)
-                    .edgesIgnoringSafeArea(.all)
-                
-                VStack(spacing: 20) {
-                    ProgressView()
-                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                        .scaleEffect(1.5)
-                    
-                    Text("Processing payment...")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(.white)
-                }
-            }
-            
-            if controller.showOrderSuccess {
-                ZStack {
-                    // Background overlay
-                    Color.black.opacity(0.7)
-                        .edgesIgnoringSafeArea(.all)
-                    
-                    // Success message card
-                    VStack(spacing: 20) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .resizable()
-                            .frame(width: 80, height: 80)
-                            .foregroundColor(AppColors.primaryGreen)
-                        
-                        Text("Order Placed Successfully!")
-                            .font(.system(size: 22, weight: .bold))
-                            .foregroundColor(.white)
-                            .multilineTextAlignment(.center)
-                        
-                        Text("Your order has been placed. You can track your order status in the Order History section.")
-                            .font(.system(size: 16))
-                            .foregroundColor(.white)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 30)
-                        
-                        Button {
-                            // Dismiss the cart view and return to restaurant
-                            self.presentationMode.wrappedValue.dismiss()
-                        } label: {
-                            Text("Done")
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundColor(.white)
-                                .frame(minWidth: 200)
-                                .padding()
-                                .background(AppColors.primaryGreen)
-                                .cornerRadius(10)
-                        }
-                        .padding(.top, 20)
-                    }
-                    .padding(30)
-                    .background(Color.black.opacity(0.2))
-                    .cornerRadius(20)
-                    .padding(.horizontal, 40)
-                }
-            }
-        }
-    }
-    
-    // MARK: - Formatted Scheduled Date
-    private var formattedScheduleDate: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "d MMM, h:mm a"
-        return formatter.string(from: controller.scheduledDate)
     }
 }
 
@@ -807,6 +998,11 @@ extension View {
     func cornerRadius(_ radius: CGFloat, corners: UIRectCorner) -> some View {
         clipShape(RoundedCorner(radius: radius, corners: corners))
     }
+    
+    // Add custom hideTabBar modifier
+    func hideTabBar(_ hidden: Bool) -> some View {
+        return self.modifier(HideTabBarModifier(hidden: hidden))
+    }
 }
 
 struct RoundedCorner: Shape {
@@ -816,6 +1012,91 @@ struct RoundedCorner: Shape {
     func path(in rect: CGRect) -> Path {
         let path = UIBezierPath(roundedRect: rect, byRoundingCorners: corners, cornerRadii: CGSize(width: radius, height: radius))
         return Path(path.cgPath)
+    }
+}
+
+// Custom modifier to hide tab bar
+struct HideTabBarModifier: ViewModifier {
+    let hidden: Bool
+    
+    func body(content: Content) -> some View {
+        content
+            .onAppear {
+                if hidden {
+                    hideTabBar()
+                }
+            }
+            .onDisappear {
+                if hidden {
+                    showTabBar()
+                }
+            }
+    }
+    
+    private func hideTabBar() {
+        DispatchQueue.main.async {
+            let scenes = UIApplication.shared.connectedScenes
+            let windowScenes = scenes.compactMap { $0 as? UIWindowScene }
+            
+            for windowScene in windowScenes {
+                for window in windowScene.windows {
+                    if let tabBarController = window.rootViewController as? UITabBarController {
+                        // Hide the tab bar
+                        tabBarController.tabBar.isHidden = true
+                        
+                        // Make it transparent
+                        tabBarController.tabBar.isTranslucent = true
+                        tabBarController.tabBar.backgroundColor = .clear
+                        tabBarController.tabBar.barTintColor = .clear
+                        
+                        // Move it off screen
+                        tabBarController.tabBar.frame.origin.y = UIScreen.main.bounds.height + 200
+                    }
+                    
+                    // Check if the tab bar controller is nested
+                    if let tabBarController = window.rootViewController?.tabBarController {
+                        tabBarController.tabBar.isHidden = true
+                        tabBarController.tabBar.isTranslucent = true
+                        tabBarController.tabBar.backgroundColor = .clear
+                        tabBarController.tabBar.barTintColor = .clear
+                        tabBarController.tabBar.frame.origin.y = UIScreen.main.bounds.height + 200
+                    }
+                }
+            }
+        }
+    }
+    
+    private func showTabBar() {
+        DispatchQueue.main.async {
+            let scenes = UIApplication.shared.connectedScenes
+            let windowScenes = scenes.compactMap { $0 as? UIWindowScene }
+            
+            for windowScene in windowScenes {
+                for window in windowScene.windows {
+                    if let tabBarController = window.rootViewController as? UITabBarController {
+                        // Show the tab bar
+                        tabBarController.tabBar.isHidden = false
+                        
+                        // Reset properties
+                        tabBarController.tabBar.isTranslucent = false
+                        tabBarController.tabBar.backgroundColor = nil
+                        tabBarController.tabBar.barTintColor = nil
+                        
+                        // Move it back to normal position
+                        tabBarController.tabBar.frame.origin.y = UIScreen.main.bounds.height - tabBarController.tabBar.frame.height
+                    }
+                    
+                    // Check if the tab bar controller is nested
+                    if let tabBarController = window.rootViewController?.tabBarController {
+                        tabBarController.tabBar.isHidden = false
+                        tabBarController.tabBar.isTranslucent = false
+                        tabBarController.tabBar.backgroundColor = nil
+                        tabBarController.tabBar.barTintColor = nil
+                        tabBarController.tabBar.frame.origin.y = UIScreen.main.bounds.height - tabBarController.tabBar.frame.height
+                    }
+                }
+            }
+        }
     }
 }
 

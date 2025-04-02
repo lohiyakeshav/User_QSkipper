@@ -31,15 +31,10 @@ class LoginViewModel: ObservableObject {
         do {
             let receivedOTP = try await authManager.requestLoginOTP(email: email)
             
-            // Only set otpSent to true if we successfully get an OTP
-            if !receivedOTP.isEmpty {
-                self.otp = receivedOTP
-                self.otpSent = true
-            } else {
-                self.errorMessage = "Failed to receive OTP. Please try again."
-                self.showError = true
-            }
-            
+            // The server may return an empty OTP in production environments
+            // when it sends the OTP via email instead of returning it directly
+            self.otp = receivedOTP
+            self.otpSent = true
             self.isLoading = false
         } catch {
             self.errorMessage = error.localizedDescription
@@ -90,7 +85,16 @@ struct LoginView: View {
     
     var body: some View {
         ZStack {
-            Color.white.edgesIgnoringSafeArea(.all)
+            // Add splash background image
+            Image("splash_background")
+                .resizable()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .scaledToFill()
+                .ignoresSafeArea()
+                
+            // White overlay with opacity for better readability
+            Color.white.opacity(0.8)
+                .edgesIgnoringSafeArea(.all)
             
             ScrollView {
                 VStack(alignment: .leading, spacing: 25) {

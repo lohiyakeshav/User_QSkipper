@@ -53,6 +53,89 @@ class NetworkUtils {
     
     // MARK: - Restaurant Endpoints
     
+    func fetchRestaurant(with restaurantId: String) async throws -> Restaurant {
+        let url = baseURl.appendingPathComponent("get_Restaurant/\(restaurantId)")
+        
+        print("📡 Fetching restaurant details for ID: \(restaurantId) from: \(url.absoluteString)")
+        
+        let maxRetries = 3
+        var lastError: Error?
+        
+        for attempt in 1...maxRetries {
+            do {
+                print("🔄 Restaurant fetch attempt \(attempt)/\(maxRetries)")
+                
+                var request = URLRequest(url: url)
+                request.timeoutInterval = 15
+                
+                let (data, response) = try await URLSession.shared.data(for: request)
+                
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    print("❌ Invalid HTTP response")
+                    throw NetworkUtilsError.NetworkError
+                }
+                
+                if httpResponse.statusCode != 200 {
+                    print("❌ HTTP Error: \(httpResponse.statusCode)")
+                    throw NetworkUtilsError.RestaurantNotFound
+                }
+                
+                // Print the response for debugging
+                if let responseString = String(data: data, encoding: .utf8) {
+                    print("📄 Restaurant response: \(responseString)")
+                }
+                
+                // Try to decode the response
+                do {
+                    // Try to decode as RestaurantResponse which has the {"restaurant": {...}} structure
+                    if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                       let restaurantData = json["restaurant"] as? [String: Any] {
+                        
+                        let id = restaurantData["_id"] as? String ?? restaurantId
+                        let name = restaurantData["name"] as? String ?? "Unknown Restaurant"
+                        let location = restaurantData["location"] as? String ?? "Unknown Location"
+                        let photoId = restaurantData["photoId"] as? String
+                        let rating = (restaurantData["rating"] as? NSNumber)?.doubleValue ?? 4.0
+                        let cuisine = restaurantData["cuisine"] as? String
+                        let estimatedTime = restaurantData["estimatedTime"] as? String
+                        
+                        let restaurant = Restaurant(
+                            id: id,
+                            name: name,
+                            estimatedTime: estimatedTime,
+                            cuisine: cuisine,
+                            photoId: photoId,
+                            rating: rating,
+                            location: location
+                        )
+                        
+                        print("✅ Successfully parsed restaurant: \(name)")
+                        return restaurant
+                    } else {
+                        print("❌ Could not extract restaurant data from JSON")
+                        throw NetworkUtilsError.JSONParsingError
+                    }
+                } catch {
+                    print("❌ JSON Parsing Error: \(error)")
+                    throw NetworkUtilsError.JSONParsingError
+                }
+            } catch {
+                lastError = error
+                print("❌ Restaurant fetch attempt \(attempt) failed: \(error.localizedDescription)")
+                
+                // Wait before retrying (exponential backoff)
+                if attempt < maxRetries {
+                    let delay = Double(attempt) * 0.5 // 0.5s, 1s, 1.5s
+                    print("⏱️ Waiting \(delay)s before retry...")
+                    try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                }
+            }
+        }
+        
+        // If all attempts failed, throw the last error or a default error
+        throw lastError ?? NetworkUtilsError.RestaurantNotFound
+    }
+    
     func fetchRestaurants() async throws -> [Restaurant] {
         let url = baseURl.appendingPathComponent("get_All_Restaurant")
         
@@ -792,12 +875,44 @@ class NetworkUtils {
     // MARK: - Order Management
     
     func submitOrder(orderRequest: PlaceOrderRequest) async throws -> Order {
-        let url = baseURl.appendingPathComponent("place_order")
+        let url = baseURl.appendingPathComponent("order-placed")
+        
+        // Log UserDefaults state
+        print("🔍 Checking UserDefaults state before order submission:")
+        print("   - User ID: \(UserDefaults.standard.string(forKey: "userID") ?? "nil")")
+        print("   - User Email: \(UserDefaults.standard.string(forKey: "user_email") ?? "nil")")
+        print("   - User Name: \(UserDefaults.standard.string(forKey: "user_name") ?? "nil")")
+        print("   - Is Logged In: \(UserDefaults.standard.bool(forKey: "is_logged_in"))")
+        
+        // Log order request details
+        print("📦 Order Request Details:")
+        print("   - User ID: \(orderRequest.userId)")
+        print("   - Restaurant ID: \(orderRequest.restaurantId)")
+        print("   - Total Amount: \(orderRequest.totalAmount)")
+        print("   - Number of Items: \(orderRequest.items.count)")
+        print("   - Order Type: \(orderRequest.orderType)")
+        if let scheduledTime = orderRequest.scheduledTime {
+            print("   - Scheduled Time: \(scheduledTime)")
+        }
+        
+        // Ensure `restaurantId` is present
+        guard !orderRequest.restaurantId.isEmpty else {
+            print("❌ Error: Restaurant ID is missing from order")
+            throw NSError(domain: "QueueSkipper", code: 400, userInfo: [
+                NSLocalizedDescriptionKey: "❌ Error: Restaurant ID is missing from order"
+            ])
+        }
         
         // Convert the order request to dictionary
         let encoder = JSONEncoder()
         encoder.keyEncodingStrategy = .convertToSnakeCase
         let orderData = try encoder.encode(orderRequest)
+        
+        // Log the JSON payload
+        if let jsonString = String(data: orderData, encoding: .utf8) {
+            print("📤 JSON Payload:")
+            print(jsonString)
+        }
         
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -805,14 +920,33 @@ class NetworkUtils {
         request.httpBody = orderData
         
         do {
+            print("🌐 Sending order request to: \(url.absoluteString)")
             let (data, response) = try await URLSession.shared.data(for: request)
             
+            // Log response details
             guard let httpResponse = response as? HTTPURLResponse else {
+                print("❌ Error: Invalid HTTP response")
                 throw NetworkUtilsError.NetworkError
             }
             
-            if httpResponse.statusCode != 200 {
-                throw NetworkUtilsError.OrderFailed
+            print("📥 Response Status Code: \(httpResponse.statusCode)")
+            print("📥 Response Headers:")
+            httpResponse.allHeaderFields.forEach { key, value in
+                print("   \(key): \(value)")
+            }
+            
+            // Convert response data to string for debugging
+            if let responseString = String(data: data, encoding: .utf8) {
+                print("📥 Response Data:")
+                print(responseString)
+            }
+            
+            // Check for success (Status Code: 200)
+            guard httpResponse.statusCode == 200 else {
+                print("❌ Error: Unexpected status code: \(httpResponse.statusCode)")
+                throw NSError(domain: "QueueSkipper", code: httpResponse.statusCode, userInfo: [
+                    NSLocalizedDescriptionKey: "Unexpected status code: \(httpResponse.statusCode)"
+                ])
             }
             
             do {
@@ -822,15 +956,23 @@ class NetworkUtils {
                 let orderResponse = try decoder.decode(OrderResponse.self, from: data)
                 
                 guard let order = orderResponse.order else {
+                    print("❌ Error: Order data is missing from response")
                     throw NetworkUtilsError.OrderFailed
                 }
                 
+                print("✅ Order placed successfully!")
+                print("   - Order ID: \(order.id)")
+                print("   - Status: \(order.status)")
+                print("   - Total Amount: \(order.totalAmount)")
+                
                 return order
             } catch {
+                print("❌ Error decoding order response: \(error)")
                 throw NetworkUtilsError.JSONParsingError
             }
             
         } catch {
+            print("❌ Network error: \(error)")
             throw NetworkUtilsError.NetworkError
         }
     }
@@ -895,6 +1037,7 @@ struct APIEndpoints {
     // Order endpoints
     static let topPicks = baseURL + "/top-picks"
     static let orderPlaced = baseURL + "/order-placed"
+    static let scheduleOrderPlaced = baseURL + "/schedule-order-placed"
     static func getOrderStatus(oid: String) -> String {
         return baseURL + "/order-status/\(oid)"
     }

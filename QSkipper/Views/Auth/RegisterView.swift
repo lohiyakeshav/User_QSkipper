@@ -33,15 +33,10 @@ class RegisterViewModel: ObservableObject {
             // Pass empty string for phone since we removed that field
             let receivedOTP = try await authManager.registerUser(email: email, name: name, phone: "")
             
-            // Only set otpSent to true if we successfully get an OTP
-            if !receivedOTP.isEmpty {
-                self.otp = receivedOTP
-                self.otpSent = true
-            } else {
-                self.errorMessage = "Failed to receive OTP. Please try again."
-                self.showError = true
-            }
-            
+            // The server may return an empty OTP in production environments
+            // when it sends the OTP via email instead of returning it directly
+            self.otp = receivedOTP
+            self.otpSent = true
             self.isLoading = false
         } catch {
             self.errorMessage = error.localizedDescription
@@ -111,9 +106,19 @@ struct RegisterView: View {
     
     var body: some View {
         ZStack {
-            Color.white.edgesIgnoringSafeArea(.all)
+            // Add splash background image
+            Image("splash_background")
+                .resizable()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .scaledToFill()
+                .ignoresSafeArea()
+                
+            // White overlay with opacity for better readability
+            Color.white.opacity(0.8)
+                .edgesIgnoringSafeArea(.all)
             
             ScrollView {
+                Spacer(minLength: 30)
                 VStack(alignment: .leading, spacing: 20) {
                     // Navigation header with back button
                     HStack {
@@ -128,7 +133,7 @@ struct RegisterView: View {
                         
                         Spacer()
                     }
-                    .padding(.top, 10)
+                    .padding(.top, 25)
                     
                     // Title
                     VStack(alignment: .leading, spacing: 5) {
@@ -140,7 +145,7 @@ struct RegisterView: View {
                             .font(.system(size: 28, weight: .bold))
                             .foregroundColor(.black)
                     }
-                    .padding(.top, 20)
+                    .padding(.top, 25)
                     .opacity(animateContent ? 1 : 0)
                     .offset(y: animateContent ? 0 : 20)
                     
@@ -262,7 +267,7 @@ struct RegisterView: View {
                             .foregroundColor(AppColors.primaryGreen)
                     }
                 }
-                .padding(.bottom, 30)
+                .padding(.bottom, 70)
                 .opacity(animateContent ? 1 : 0)
             }
         }

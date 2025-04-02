@@ -22,7 +22,7 @@ struct SplashView: View {
                 
                 Image("Logo")
                     .resizable()
-                    .frame(width: 120, height: 130)
+                    .frame(width: 140, height: 140)
                     .padding(.bottom, 60)
             }
             .onAppear {

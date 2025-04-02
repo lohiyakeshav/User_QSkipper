@@ -1,0 +1,52 @@
+{
+  "identifier" : "QSkipper_StoreKit",
+  "nonRenewingSubscriptions" : [
+
+  ],
+  "products" : [
+    {
+      "displayPrice" : "9.99",
+      "familyShareable" : false,
+      "groupNumber" : 1,
+      "internalID" : "1",
+      "localizations" : [
+        {
+          "description" : "Order payment for QSkipper",
+          "displayName" : "Order Payment",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "com.queueskipper.orderpayment",
+      "referenceName" : "Order Payment",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "100.00",
+      "familyShareable" : false,
+      "groupNumber" : 2,
+      "internalID" : "2",
+      "localizations" : [
+        {
+          "description" : "Add ₹10,000 to your wallet",
+          "displayName" : "₹10,000 Wallet Top-up",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "com.queueskipper.wallet.10000",
+      "referenceName" : "Wallet Top-up ₹10,000",
+      "type" : "Consumable"
+    }
+  ],
+  "settings" : {
+    "_applicationInternalID" : "com.queueskipper",
+    "_developerTeamID" : "YOUR_TEAM_ID",
+    "_lastSynchronizedDate" : 0
+  },
+  "subscriptionGroups" : [
+
+  ],
+  "version" : {
+    "major" : 2,
+    "minor" : 0
+  }
+} 

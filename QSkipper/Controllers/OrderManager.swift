@@ -133,6 +133,9 @@ class OrderManager: ObservableObject {
             currentCart.remove(at: index)
         }
         saveCart()
+        
+        // Post notification that cart has changed
+        NotificationCenter.default.post(name: NSNotification.Name("CartDidChange"), object: nil)
     }
     
     // Clear cart

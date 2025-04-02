@@ -14,6 +14,7 @@ struct QSkipperApp: App {
     @StateObject private var orderManager = OrderManager.shared
     @StateObject private var favoriteManager = FavoriteManager.shared
     @StateObject private var locationManager = LocationManager.shared
+    @StateObject private var tabSelection = TabSelection()
     
     var body: some Scene {
         WindowGroup {
@@ -22,6 +23,7 @@ struct QSkipperApp: App {
                 .environmentObject(orderManager)
                 .environmentObject(favoriteManager)
                 .environmentObject(locationManager)
+                .environmentObject(tabSelection)
                 .safeAreaInset(edge: .top) {
                     Color.clear.frame(height: 0)
                 }

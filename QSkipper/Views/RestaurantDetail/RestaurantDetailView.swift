@@ -10,6 +10,33 @@ struct RestaurantDetailView: View {
     @State private var showCartSheet = false
     @State private var searchText: String = ""
     
+    // Default initializer with full restaurant data
+    init(restaurant: Restaurant) {
+        self.restaurant = restaurant
+    }
+    
+    // Initializer with just restaurant ID, loading rest from network
+    init(restaurantId: String) {
+        // Create a temporary restaurant object until we load the real data
+        self.restaurant = Restaurant(
+            id: restaurantId,
+            name: "Loading...",
+            estimatedTime: nil,
+            cuisine: nil,
+            photoId: nil,
+            rating: 4.0,
+            location: "Loading..."
+        )
+        
+        // Load the full restaurant data
+        Task {
+            if let loadedRestaurant = try? await NetworkUtils.shared.fetchRestaurant(with: restaurantId) {
+                // We'll update the view model in onAppear
+                print("✅ Loaded restaurant details for: \(loadedRestaurant.name)")
+            }
+        }
+    }
+    
     var body: some View {
         ScrollView {
             restaurantContent
@@ -17,17 +44,24 @@ struct RestaurantDetailView: View {
         .navigationBarHidden(true)
         .onAppear {
             viewModel.loadProducts(for: restaurant.id)
+            
+            // If we initialized with just an ID, we need to load the restaurant details
+            if restaurant.name == "Loading..." {
+                viewModel.loadRestaurant(id: restaurant.id)
+            }
         }
-        .overlay(cartFloatingButton)
     }
     
     // MARK: - Restaurant Banner Section
     private var restaurantBanner: some View {
         ZStack(alignment: .top) {
-            // Restaurant Banner Image
-            RestaurantImageView(photoId: restaurant.photoId, name: restaurant.name)
-                .frame(height: 200)
-                .clipped()
+            // Restaurant Banner Image - Use viewModel.restaurant if available
+            RestaurantImageView(
+                photoId: viewModel.restaurant?.photoId ?? restaurant.photoId,
+                name: viewModel.restaurant?.name ?? restaurant.name
+            )
+            .frame(height: 200)
+            .clipped()
             
             // Gradient Overlay for better text visibility
             LinearGradient(
@@ -63,6 +97,35 @@ struct RestaurantDetailView: View {
                     .foregroundColor(.white)
                 
                 Spacer()
+                
+                // Cart Button
+                NavigationLink(destination: CartView()
+                    .environmentObject(orderManager)
+                    .environmentObject(TabSelection.shared)) {
+                    ZStack(alignment: .topTrailing) {
+                        Circle()
+                            .fill(AppColors.primaryGreen.opacity(0.1))
+                            .frame(width: 38, height: 38)
+                        
+                        Image(systemName: "cart.fill")
+                            .font(.system(size: 18))
+                            .foregroundColor(AppColors.primaryGreen)
+                            .frame(width: 20, height: 20)
+                            .padding(9)
+                        
+                        // Show badge only if items in cart
+                        let restaurantId = viewModel.restaurant?.id ?? restaurant.id
+                        if !orderManager.currentCart.isEmpty && orderManager.currentRestaurantId == restaurantId {
+                            Text("\(orderManager.getTotalItems())")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(.white)
+                                .frame(width: 20, height: 20)
+                                .background(Color.red)
+                                .clipShape(Circle())
+                                .offset(x: 10, y: -10)
+                        }
+                    }
+                }
             }
             .padding(.horizontal, 20)
             .padding(.top, 12)
@@ -72,8 +135,8 @@ struct RestaurantDetailView: View {
     // MARK: - Restaurant Info Section
     private var restaurantInfo: some View {
         VStack(alignment: .leading, spacing: 15) {
-            // Restaurant Name
-            Text(restaurant.name)
+            // Restaurant Name - Use viewModel.restaurant if available, otherwise use the passed restaurant
+            Text(viewModel.restaurant?.name ?? restaurant.name)
                 .font(.system(size: 24, weight: .bold))
                 .foregroundColor(.black)
                 .padding(.horizontal, 20)
@@ -99,24 +162,26 @@ struct RestaurantDetailView: View {
                     .foregroundColor(.gray)
             }
             
-            // Delivery Time
+            // Delivery Time - Use viewModel.restaurant if available
             HStack(spacing: 5) {
                 Image(systemName: "clock")
                     .foregroundColor(AppColors.primaryGreen)
                     .font(.system(size: 13))
                 
-                Text("\(restaurant.estimatedTime ?? "20-30") mins")
+                let estimatedTime = viewModel.restaurant?.estimatedTime ?? restaurant.estimatedTime ?? "20-30"
+                Text("\(estimatedTime) mins")
                     .font(.system(size: 14))
                     .foregroundColor(.gray)
             }
             
-            // Rating
+            // Rating - Use viewModel.restaurant if available
             HStack(spacing: 3) {
                 Image(systemName: "star.fill")
                     .foregroundColor(.yellow)
                     .font(.system(size: 13))
                 
-                Text(String(format: "%.1f", restaurant.rating))
+                let rating = viewModel.restaurant?.rating ?? restaurant.rating
+                Text(String(format: "%.1f", rating))
                     .font(.system(size: 14))
                     .foregroundColor(.gray)
             }
@@ -281,56 +346,6 @@ struct RestaurantDetailView: View {
         }
         .frame(maxWidth: .infinity, minHeight: 300)
         .background(Color.white)
-    }
-    
-    // MARK: - Cart Floating Button
-    private var cartFloatingButton: some View {
-        VStack {
-            Spacer()
-            
-            // Only show if cart is not empty
-            if !orderManager.currentCart.isEmpty {
-                NavigationLink(destination: CartView()) {
-                    HStack(spacing: 15) {
-                        // Cart icon with count
-                        ZStack {
-                            Circle()
-                                .fill(Color.white)
-                                .frame(width: 40, height: 40)
-                            
-                            Image(systemName: "cart.fill")
-                                .foregroundColor(AppColors.primaryGreen)
-                            
-                            // Badge
-                            Text("\(orderManager.getTotalItems())")
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundColor(.white)
-                                .padding(5)
-                                .background(Color.red)
-                                .clipShape(Circle())
-                                .offset(x: 12, y: -12)
-                        }
-                        
-                        Text("View Cart")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(.white)
-                        
-                        Spacer()
-                        
-                        Text("₹\(String(format: "%.0f", orderManager.getCartTotal()))")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(.white)
-                    }
-                    .padding(.horizontal, 15)
-                    .padding(.vertical, 12)
-                    .background(AppColors.primaryGreen)
-                    .cornerRadius(25)
-                    .shadow(color: AppColors.primaryGreen.opacity(0.3), radius: 5, x: 0, y: 2)
-                }
-                .padding(.horizontal, 20)
-                .padding(.bottom, 20)
-            }
-        }
     }
     
     // MARK: - Main Content

@@ -6,8 +6,33 @@ class RestaurantDetailViewModel: ObservableObject {
     @Published var categories: [String] = []
     @Published var isLoading: Bool = false
     @Published var errorMessage: String? = nil
+    @Published var restaurant: Restaurant? = nil
     
     private let networkUtils = NetworkUtils.shared
+    
+    func loadRestaurant(id: String) {
+        isLoading = true
+        errorMessage = nil
+        
+        Task {
+            do {
+                print("📱 Loading restaurant details for ID: \(id)")
+                let fetchedRestaurant = try await networkUtils.fetchRestaurant(with: id)
+                
+                await MainActor.run {
+                    self.restaurant = fetchedRestaurant
+                    self.isLoading = false
+                    print("✅ Loaded restaurant: \(fetchedRestaurant.name)")
+                }
+            } catch {
+                await MainActor.run {
+                    self.errorMessage = "Failed to load restaurant: \(error.localizedDescription)"
+                    self.isLoading = false
+                    print("❌ Error loading restaurant: \(error)")
+                }
+            }
+        }
+    }
     
     func loadProducts(for restaurantId: String) {
         isLoading = true

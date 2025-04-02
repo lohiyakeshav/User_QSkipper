@@ -64,7 +64,7 @@ class AuthManager: ObservableObject {
             if let otp = response.otp {
                 return otp
             } else {
-                return "123456" // Use a dummy OTP for testing
+                return "" // Return empty string instead of hardcoded OTP
             }
         } catch {
             print("Login error: \(error)")
@@ -185,7 +185,7 @@ class AuthManager: ObservableObject {
             if let otp = response.otp {
                 return otp
             } else {
-                return "123456" // Use a dummy OTP for testing
+                return "" // Return empty string instead of hardcoded OTP
             }
         } catch {
             print("Register error: \(error)")
