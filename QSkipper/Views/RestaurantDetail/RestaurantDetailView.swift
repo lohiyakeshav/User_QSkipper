@@ -9,6 +9,7 @@ struct RestaurantDetailView: View {
     @State private var selectedCategory: String? = nil
     @State private var showCartSheet = false
     @State private var searchText: String = ""
+    @State private var selectedProduct: Product? = nil
     
     // Default initializer with full restaurant data
     init(restaurant: Restaurant) {
@@ -43,12 +44,29 @@ struct RestaurantDetailView: View {
         }
         .navigationBarHidden(true)
         .onAppear {
+            print("🖥️ RestaurantDetailView appeared for: \(restaurant.name) (ID: \(restaurant.id))")
+            
+            // Trigger product loading
+            print("🔄 Requesting products for restaurant ID: \(restaurant.id)")
             viewModel.loadProducts(for: restaurant.id)
             
             // If we initialized with just an ID, we need to load the restaurant details
             if restaurant.name == "Loading..." {
+                print("🔍 Loading full restaurant details for ID: \(restaurant.id)")
                 viewModel.loadRestaurant(id: restaurant.id)
             }
+        }
+        .sheet(item: $selectedProduct) { product in
+            ProductDetailModal(
+                product: product,
+                restaurantId: viewModel.restaurant?.id ?? restaurant.id,
+                restaurantName: viewModel.restaurant?.name ?? restaurant.name,
+                onClose: { selectedProduct = nil }
+            )
+            .environmentObject(orderManager)
+            .environmentObject(favoriteManager)
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
         }
     }
     
@@ -114,15 +132,9 @@ struct RestaurantDetailView: View {
                             .padding(9)
                         
                         // Show badge only if items in cart
-                        let restaurantId = viewModel.restaurant?.id ?? restaurant.id
-                        if !orderManager.currentCart.isEmpty && orderManager.currentRestaurantId == restaurantId {
-                            Text("\(orderManager.getTotalItems())")
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundColor(.white)
-                                .frame(width: 20, height: 20)
-                                .background(Color.red)
-                                .clipShape(Circle())
-                                .offset(x: 10, y: -10)
+                        if !orderManager.currentCart.isEmpty {
+                            CartBadge(count: orderManager.getTotalItems())
+                                .offset(x: 6, y: -6)
                         }
                     }
                 }
@@ -308,7 +320,8 @@ struct RestaurantDetailView: View {
                     ForEach(filteredProducts) { product in
                         MenuProductCard(
                             product: product,
-                            restaurantId: viewModel.restaurant?.id ?? restaurant.id
+                            restaurantId: viewModel.restaurant?.id ?? restaurant.id,
+                            onTap: { selectedProduct = product }
                         )
                         .frame(minHeight: 260)
                     }
@@ -387,6 +400,7 @@ struct CategoryButton: View {
 struct MenuProductCard: View {
     let product: Product
     let restaurantId: String
+    let onTap: () -> Void
     @State private var showingAddedToast = false
     @State private var quantity = 0
     @EnvironmentObject private var orderManager: OrderManager
@@ -605,6 +619,9 @@ struct MenuProductCard: View {
         .cornerRadius(12)
         .shadow(color: Color.black.opacity(0.1), radius: 5, x: 0, y: 2)
         .frame(minWidth: 0, maxWidth: .infinity)
+        .onTapGesture {
+            onTap()
+        }
         .onAppear {
             // Check if already in cart
             quantity = orderManager.getQuantityInCart(productId: product.id)
@@ -615,6 +632,277 @@ struct MenuProductCard: View {
             // Check if already in favorites
             isFavorite = favoriteManager.isFavorite(product)
             print("   → Is favorite: \(isFavorite)")
+        }
+    }
+}
+
+struct ProductDetailModal: View {
+    let product: Product
+    let restaurantId: String
+    let restaurantName: String
+    let onClose: () -> Void
+    @State private var quantity = 0
+    @State private var showingAddedToast = false
+    @State private var isFavorite = false
+    @EnvironmentObject private var orderManager: OrderManager
+    @EnvironmentObject private var favoriteManager: FavoriteManager
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            // Drag indicator
+            Capsule()
+                .fill(Color.gray.opacity(0.3))
+                .frame(width: 40, height: 4)
+                .padding(.top, 8)
+                .padding(.bottom, 16)
+            
+            // Product content
+            VStack(spacing: 0) {
+                // Product image and info header
+                HStack(alignment: .top, spacing: 15) {
+                    // Product image
+                    ProductImageView(photoId: product.photoId, name: product.name, category: product.category)
+                        .frame(width: 110, height: 110)
+                        .cornerRadius(10)
+                    
+                    // Product info
+                    VStack(alignment: .leading, spacing: 8) {
+                        // Name
+                        Text(product.name)
+                            .font(.system(size: 18, weight: .bold))
+                            .lineLimit(2)
+                        
+                        // Veg badge
+                        if product.isVeg {
+                            HStack(spacing: 4) {
+                                Image(systemName: "leaf.fill")
+                                    .foregroundColor(.green)
+                                    .font(.system(size: 12))
+                                Text("Vegetarian")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.green)
+                            }
+                        }
+                        
+                        // Rating
+                        HStack(spacing: 4) {
+                            Image(systemName: "star.fill")
+                                .foregroundColor(.yellow)
+                                .font(.system(size: 12))
+                            
+                            Text(String(format: "%.1f", product.rating))
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundColor(.gray)
+                        }
+                        
+                        // Price
+                        Text("₹\(String(format: "%.2f", product.price))")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundColor(AppColors.primaryGreen)
+                            .padding(.top, 4)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    
+                    // Favorite button
+                    Button {
+                        isFavorite.toggle()
+                        favoriteManager.toggleFavorite(product)
+                    } label: {
+                        Image(systemName: isFavorite ? "heart.fill" : "heart")
+                            .font(.system(size: 16))
+                            .foregroundColor(isFavorite ? .red : .gray)
+                    }
+                    .padding(8)
+                }
+                .padding(.horizontal, 20)
+                
+                Divider()
+                    .padding(.vertical, 16)
+                
+                // Details area
+                ScrollView(showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 20) {
+                        // Description
+                        if let description = product.description, !description.isEmpty {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Description")
+                                    .font(.system(size: 16, weight: .semibold))
+                                
+                                Text(description)
+                                    .font(.system(size: 14))
+                                    .foregroundColor(.gray)
+                                    .lineSpacing(4)
+                            }
+                            .padding(.horizontal, 20)
+                        }
+                        
+                        // Product details in a grid
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Details")
+                                .font(.system(size: 16, weight: .semibold))
+                                .padding(.horizontal, 20)
+                            
+                            VStack(spacing: 12) {
+                                // Category
+                                if let category = product.category, !category.isEmpty {
+                                    DetailRow(title: "Category", value: category)
+                                }
+                                
+                                // Extra time
+                                if let extraTime = product.extraTime, extraTime > 0 {
+                                    DetailRow(title: "Extra Prep Time", value: "\(extraTime) minutes")
+                                }
+                                
+                                // Availability
+                                DetailRow(title: "Available", value: product.isAvailable ? "Yes" : "No")
+                            }
+                            .padding(.horizontal, 20)
+                        }
+                        
+                        // Extra spacing at bottom for button
+                        Spacer(minLength: 80)
+                    }
+                }
+                
+                // Add to cart button - fixed at bottom
+                VStack {
+                    Divider()
+                    
+                    HStack {
+                        if quantity > 0 {
+                            // Show quantity controls
+                            HStack {
+                                Button {
+                                    if quantity > 1 {
+                                        quantity -= 1
+                                        orderManager.updateCartItemQuantity(productId: product.id, quantity: quantity)
+                                    } else {
+                                        quantity = 0
+                                        orderManager.removeFromCart(productId: product.id)
+                                    }
+                                } label: {
+                                    Image(systemName: "minus")
+                                        .font(.system(size: 14, weight: .bold))
+                                        .foregroundColor(.white)
+                                        .frame(width: 35, height: 35)
+                                        .background(AppColors.primaryGreen)
+                                        .clipShape(RoundedRectangle(cornerRadius: 5))
+                                }
+                                
+                                Text("\(quantity)")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .frame(minWidth: 40)
+                                
+                                Button {
+                                    quantity += 1
+                                    orderManager.updateCartItemQuantity(productId: product.id, quantity: quantity)
+                                } label: {
+                                    Image(systemName: "plus")
+                                        .font(.system(size: 14, weight: .bold))
+                                        .foregroundColor(.white)
+                                        .frame(width: 35, height: 35)
+                                        .background(AppColors.primaryGreen)
+                                        .clipShape(RoundedRectangle(cornerRadius: 5))
+                                }
+                            }
+                            .frame(maxWidth: .infinity)
+                        } else {
+                            // Show Add button
+                            Button(action: {
+                                var productToAdd = product
+                                
+                                // Ensure product has valid restaurantId
+                                if productToAdd.restaurantId.isEmpty {
+                                    productToAdd = Product(
+                                        id: productToAdd.id,
+                                        name: productToAdd.name,
+                                        description: productToAdd.description,
+                                        price: productToAdd.price,
+                                        restaurantId: restaurantId,
+                                        category: productToAdd.category,
+                                        isAvailable: productToAdd.isAvailable,
+                                        rating: productToAdd.rating,
+                                        extraTime: productToAdd.extraTime,
+                                        photoId: productToAdd.photoId,
+                                        isVeg: productToAdd.isVeg
+                                    )
+                                }
+                                
+                                // Set quantity first to show UI update
+                                quantity = 1
+                                
+                                // Add to cart
+                                orderManager.addToCart(product: productToAdd)
+                                
+                                // Show toast message
+                                withAnimation {
+                                    showingAddedToast = true
+                                }
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                                    withAnimation {
+                                        showingAddedToast = false
+                                    }
+                                }
+                            }) {
+                                HStack {
+                                    Spacer()
+                                    
+                                    if showingAddedToast {
+                                        Image(systemName: "checkmark")
+                                            .font(.system(size: 14, weight: .bold))
+                                        Text("Added to Cart")
+                                            .font(.system(size: 16, weight: .semibold))
+                                    } else {
+                                        Image(systemName: "plus")
+                                            .font(.system(size: 14, weight: .bold))
+                                        Text("Add to Cart")
+                                            .font(.system(size: 16, weight: .semibold))
+                                    }
+                                    
+                                    Spacer()
+                                }
+                                .foregroundColor(.white)
+                                .padding(.vertical, 12)
+                                .frame(maxWidth: .infinity)
+                                .background(showingAddedToast ? Color.green : AppColors.primaryGreen)
+                                .cornerRadius(10)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 15)
+                }
+                .background(Color.white)
+                .shadow(color: Color.black.opacity(0.1), radius: 10, x: 0, y: -5)
+            }
+        }
+        .background(Color.white)
+        .onAppear {
+            // Check if already in cart
+            quantity = orderManager.getQuantityInCart(productId: product.id)
+            
+            // Check if already in favorites
+            isFavorite = favoriteManager.isFavorite(product)
+        }
+    }
+}
+
+// Helper for detail rows
+struct DetailRow: View {
+    let title: String
+    let value: String
+    
+    var body: some View {
+        HStack(alignment: .top) {
+            Text(title)
+                .font(.system(size: 14))
+                .foregroundColor(.gray)
+                .frame(width: 120, alignment: .leading)
+            
+            Text(value)
+                .font(.system(size: 14))
+                .foregroundColor(.black)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
