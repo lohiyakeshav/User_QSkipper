@@ -548,6 +548,9 @@ struct DeliveryOptionsView: View {
                 // Now option
                 Button {
                     controller.isSchedulingOrder = false
+                    // Reset scheduled date to default (1 hour from now)
+                    controller.scheduledDate = Date().addingTimeInterval(3600)
+                    print("📅 Reset to 'Now' option. scheduledDate reset to 1 hour from now")
                 } label: {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Now")
@@ -573,6 +576,7 @@ struct DeliveryOptionsView: View {
                 Button {
                     controller.showSchedulePicker = true
                     controller.isSchedulingOrder = true
+                    print("📅 Opened schedule picker. Current date: \(controller.scheduledDate)")
                 } label: {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Schedule Later")
@@ -672,6 +676,7 @@ struct RestaurantDetailsView: View {
                                 
                                 Button {
                                     controller.showSchedulePicker = true
+                                    print("📅 Change button pressed. Current scheduled date: \(controller.scheduledDate)")
                                 } label: {
                                     Text("Change")
                                         .font(.system(size: 14, weight: .medium))
@@ -777,6 +782,56 @@ struct SchedulePickerSheet: View {
     let dayOptions = ["Today", "Tomorrow"]
     let timeOptions = ["12:00 PM", "12:30 PM", "1:00 PM", "1:30 PM", "2:00 PM", "2:30 PM", "3:00 PM", "3:30 PM", "4:00 PM", "4:30 PM", "5:00 PM", "5:30 PM", "6:00 PM"]
     
+    // Initialize with proper values based on selectedDate
+    init(selectedDate: Binding<Date>, isScheduled: Binding<Bool>, onConfirm: @escaping () -> Void) {
+        self._selectedDate = selectedDate
+        self._isScheduled = isScheduled
+        self.onConfirm = onConfirm
+        
+        // Determine if the current selectedDate is today or tomorrow
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: today)!
+        let selectedDay = calendar.startOfDay(for: selectedDate.wrappedValue)
+        
+        // Set initial values for selectedDay
+        let isTomorrow = calendar.isDate(selectedDay, inSameDayAs: tomorrow)
+        _selectedDay = State(initialValue: isTomorrow ? "Tomorrow" : "Today")
+        
+        // Set initial time value
+        let hour = calendar.component(.hour, from: selectedDate.wrappedValue)
+        let minute = calendar.component(.minute, from: selectedDate.wrappedValue)
+        
+        let isPM = hour >= 12
+        let displayHour = isPM ? (hour > 12 ? hour - 12 : 12) : (hour == 0 ? 12 : hour)
+        let timeString = String(format: "%d:%02d %@", displayHour, minute, isPM ? "PM" : "AM")
+        
+        // Find closest match in timeOptions
+        if let matchingTime = timeOptions.first(where: { $0 == timeString }) {
+            _selectedTime = State(initialValue: matchingTime)
+        } else {
+            // Find closest option
+            for option in timeOptions {
+                let optionHour = hourFromTimeString(option)
+                if optionHour >= hour {
+                    _selectedTime = State(initialValue: option)
+                    break
+                }
+            }
+        }
+    }
+    
+    // Static helper to parse hour from time string used in init
+    private static func hourFromTimeString(_ time: String) -> Int {
+        let components = time.components(separatedBy: ":")
+        if components.count > 0 {
+            if let hourString = components.first, let hour = Int(hourString) {
+                return time.contains("PM") && hour != 12 ? hour + 12 : hour
+            }
+        }
+        return 0
+    }
+    
     var body: some View {
         VStack(spacing: 20) {
             // Header with icon and title
@@ -823,12 +878,51 @@ struct SchedulePickerSheet: View {
                         Button {
                             selectedDay = day
                             
-                            // Update date based on selection
+                            // Update date based on selection and RESET the time to default for that day
                             let calendar = Calendar.current
+                            
                             if day == "Today" {
-                                selectedDate = Date()
+                                // Reset to today with current time + 1 hour (or next available slot)
+                                let now = Date()
+                                let currentHour = calendar.component(.hour, from: now)
+                                
+                                // Create a date for today but preserve the selected time
+                                var components = calendar.dateComponents([.year, .month, .day], from: now)
+                                
+                                // If before 11 AM, set to first time slot
+                                if currentHour < 11 {
+                                    // Set to first available time
+                                    if !timeOptions.isEmpty {
+                                        selectedTime = timeOptions[0]
+                                        updateSelectedDate(with: timeOptions[0])
+                                    }
+                                }
+                                // If after 6 PM, shouldn't be here (no options for today)
+                                else if currentHour >= 18 {
+                                    // Fallback to tomorrow's first slot
+                                    selectedDay = "Tomorrow"
+                                    selectedDate = calendar.date(byAdding: .day, value: 1, to: Date()) ?? Date()
+                                    if !timeOptions.isEmpty {
+                                        selectedTime = timeOptions[0]
+                                        updateSelectedDate(with: timeOptions[0])
+                                    }
+                                }
+                                // Otherwise find appropriate time slot
+                                else {
+                                    let appropriateOptions = visibleTimeOptions
+                                    if !appropriateOptions.isEmpty {
+                                        selectedTime = appropriateOptions[0]
+                                        // Create today's date with selected time
+                                        updateSelectedDate(with: selectedTime)
+                                    }
+                                }
                             } else {
+                                // For Tomorrow: Set to tomorrow with first available time slot
                                 selectedDate = calendar.date(byAdding: .day, value: 1, to: Date()) ?? Date()
+                                if !timeOptions.isEmpty {
+                                    selectedTime = timeOptions[0]
+                                    updateSelectedDate(with: timeOptions[0])
+                                }
                             }
                         } label: {
                             VStack {
@@ -916,25 +1010,45 @@ struct SchedulePickerSheet: View {
     private var visibleTimeOptions: [String] {
         if selectedDay == "Today" {
             let calendar = Calendar.current
-            let hour = calendar.component(.hour, from: Date())
-            
-            // If current hour is before 11 AM, show all options
-            if hour < 11 {
-                return timeOptions
-            }
+            let now = Date()
+            let hour = calendar.component(.hour, from: now)
+            let minute = calendar.component(.minute, from: now)
             
             // If current hour is after 6 PM, show no options for today
             if hour >= 18 {
+                print("🕒 Current hour (\(hour)) is after 6 PM. No today options available")
                 return []
+            }
+            
+            // If current hour is before 11 AM, show all options
+            if hour < 11 {
+                print("🕒 Current hour (\(hour)) is before 11 AM. All options available")
+                return timeOptions
             }
             
             // Otherwise show times that are at least 1 hour from now
             return timeOptions.filter { time in
                 let timeHour = hourFromTimeString(time)
-                return timeHour > hour + 1 && timeHour <= 18
+                
+                // If the hour is more than current hour + 1, it's available
+                if timeHour > hour + 1 {
+                    return true
+                }
+                
+                // If the hour is exactly current hour + 1, check minutes
+                if timeHour == hour + 1 {
+                    // Parse minutes from the time string
+                    if let minuteStr = time.split(separator: ":").last?.split(separator: " ").first,
+                       let timeMinute = Int(minuteStr) {
+                        // Available if the minute in time option is greater than current minute
+                        return timeMinute >= minute
+                    }
+                }
+                
+                return false
             }
         } else {
-            // For tomorrow, show all allowed times (11 AM to 6 PM)
+            // For tomorrow, show all allowed times (12 PM to 6 PM)
             return timeOptions
         }
     }
@@ -982,13 +1096,29 @@ struct SchedulePickerSheet: View {
             hour = 0
         }
         
-        // Set the components
-        var components = calendar.dateComponents([.year, .month, .day], from: selectedDate)
+        // Get the appropriate date components based on selectedDay
+        let now = Date()
+        var baseDate: Date
+        
+        if selectedDay == "Today" {
+            // Use today's date
+            baseDate = now
+        } else {
+            // Use tomorrow's date
+            baseDate = calendar.date(byAdding: .day, value: 1, to: now) ?? now
+        }
+        
+        // Get the year, month, and day from the appropriate base date
+        var components = calendar.dateComponents([.year, .month, .day], from: baseDate)
+        
+        // Set the hour and minute from the time string
         components.hour = hour
         components.minute = minute
         
+        // Create the final date
         if let date = calendar.date(from: components) {
             selectedDate = date
+            print("📅 Date updated to: \(date)")
         }
     }
 }
