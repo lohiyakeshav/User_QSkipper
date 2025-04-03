@@ -46,12 +46,18 @@ class RestaurantDetailViewModel: ObservableObject {
                 print("📡 RESTAURANT DETAIL: Calling networkUtils.fetchProducts")
                 var fetchedProducts = try await networkUtils.fetchProducts(for: restaurantId)
                 
+                // Debug: Print all products before fixing
+                print("📋 RESTAURANT DETAIL: Fetched \(fetchedProducts.count) products:")
+                fetchedProducts.forEach { product in
+                    print("   → \(product.name) (ID: \(product.id), Category: \(product.category ?? "nil"), RestaurantId: \(product.restaurantId))")
+                }
+                
                 // CRITICAL FIX: Ensure all products have the correct restaurantId
                 // This fixes the issue where some products might have empty or incorrect restaurantIds
                 if !fetchedProducts.isEmpty {
                     var fixedProducts = 0
                     for i in 0..<fetchedProducts.count {
-                        if fetchedProducts[i].restaurantId.isEmpty {
+                        if fetchedProducts[i].restaurantId.isEmpty || fetchedProducts[i].restaurantId != restaurantId {
                             // Copy the product with corrected restaurantId
                             let product = fetchedProducts[i]
                             let correctedProduct = Product(
@@ -69,10 +75,11 @@ class RestaurantDetailViewModel: ObservableObject {
                             )
                             fetchedProducts[i] = correctedProduct
                             fixedProducts += 1
+                            print("🔧 Fixed restaurantId for product: \(product.name)")
                         }
                     }
                     if fixedProducts > 0 {
-                        print("🔧 RESTAURANT DETAIL: Fixed empty restaurantId for \(fixedProducts) products")
+                        print("🔧 RESTAURANT DETAIL: Fixed restaurantId for \(fixedProducts) products")
                     }
                 }
                 
@@ -81,8 +88,13 @@ class RestaurantDetailViewModel: ObservableObject {
                     self.extractCategories()
                     self.isLoading = false
                     
+                    // Debug: Print final products after fixing
+                    print("✅ RESTAURANT DETAIL: Final \(self.products.count) products:")
+                    self.products.forEach { product in
+                        print("   → \(product.name) (ID: \(product.id), Category: \(product.category ?? "nil"), RestaurantId: \(product.restaurantId))")
+                    }
+                    
                     // Log product categories and count
-                    print("✅ RESTAURANT DETAIL: Loaded \(fetchedProducts.count) products across \(self.categories.count) categories")
                     print("📋 Categories: \(self.categories.joined(separator: ", "))")
                     
                     // Log price range

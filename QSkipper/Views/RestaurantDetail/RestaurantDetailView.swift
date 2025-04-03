@@ -321,9 +321,15 @@ struct RestaurantDetailView: View {
                         MenuProductCard(
                             product: product,
                             restaurantId: viewModel.restaurant?.id ?? restaurant.id,
-                            onTap: { selectedProduct = product }
+                            onTap: {
+                                print("🔍 Selected product: \(product.name) (ID: \(product.id))")
+                                print("   → Category: \(product.category ?? "nil")")
+                                print("   → RestaurantId: \(product.restaurantId)")
+                                selectedProduct = product
+                            }
                         )
                         .frame(minHeight: 260)
+                        .id(product.id) // Add explicit ID to help SwiftUI track items
                     }
                 }
                 .padding(.horizontal, 16)
@@ -409,67 +415,80 @@ struct MenuProductCard: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            // Product Image
-            ZStack(alignment: .topTrailing) {
-                ProductImageView(photoId: product.photoId, name: product.name, category: product.category)
-                    .scaledToFill()
-                    .frame(height: 130)
-                    .frame(maxWidth: .infinity)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                
-                // Favorite button
-                Button {
-                    isFavorite.toggle()
-                    if isFavorite {
-                        favoriteManager.toggleFavorite(product)
-                    } else {
-                        favoriteManager.toggleFavorite(product)
-                    }
-                } label: {
-                    Image(systemName: isFavorite ? "heart.fill" : "heart")
-                        .foregroundColor(isFavorite ? .red : .white)
-                        .padding(6)
-                        .background(Circle().fill(Color.black.opacity(0.3)))
-                }
-                .padding(8)
-            }
-            
-            // Product Info
-            Text(product.name)
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundColor(.black)
-                .lineLimit(2)
-                .frame(height: 40, alignment: .leading)
-                .fixedSize(horizontal: false, vertical: true)
-            
-            // Rating and Price Row
-            HStack {
-                // Rating
-                HStack(spacing: 2) {
-                    Image(systemName: "star.fill")
-                        .foregroundColor(.yellow)
-                        .font(.system(size: 12))
+            // Product Image and Info section that should be tappable
+            VStack(alignment: .leading, spacing: 8) {
+                // Product Image
+                ZStack(alignment: .topTrailing) {
+                    ProductImageView(photoId: product.photoId, name: product.name, category: product.category)
+                        .scaledToFill()
+                        .frame(height: 130)
+                        .frame(maxWidth: .infinity)
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
                     
-                    Text(String(format: "%.1f", product.rating))
-                        .font(.system(size: 12))
-                        .foregroundColor(.gray)
+                    // Favorite button
+                    Button {
+                        favoriteManager.toggleFavorite(product)
+                        // Update local state to match the favoriteManager state
+                        isFavorite = favoriteManager.isFavorite(product)
+                    } label: {
+                        Image(systemName: isFavorite ? "heart.fill" : "heart")
+                            .foregroundColor(isFavorite ? .red : .white)
+                            .padding(6)
+                            .background(Circle().fill(Color.black.opacity(0.3)))
+                    }
+                    .padding(8)
+                    // Prevent favorite button from triggering card tap
+                    .highPriorityGesture(
+                        TapGesture()
+                            .onEnded { _ in
+                                favoriteManager.toggleFavorite(product)
+                                isFavorite = favoriteManager.isFavorite(product)
+                            }
+                    )
                 }
                 
-                Spacer()
+                // Product Info
+                Text(product.name)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.black)
+                    .lineLimit(2)
+                    .frame(height: 40, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
                 
-                // Price
-                Text("₹\(String(format: "%.0f", product.price))")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundColor(AppColors.primaryGreen)
+                // Rating and Price Row
+                HStack {
+                    // Rating
+                    HStack(spacing: 2) {
+                        Image(systemName: "star.fill")
+                            .foregroundColor(.yellow)
+                            .font(.system(size: 12))
+                        
+                        Text(String(format: "%.1f", product.rating))
+                            .font(.system(size: 12))
+                            .foregroundColor(.gray)
+                    }
+                    
+                    Spacer()
+                    
+                    // Price
+                    Text("₹\(String(format: "%.0f", product.price))")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(AppColors.primaryGreen)
+                }
             }
-            .fixedSize(horizontal: false, vertical: true)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                print("🔍 Tapped product card area for: \(product.name)")
+                onTap()
+            }
             
-            // Add to cart button
+            // Add to cart section - This should NOT trigger the modal
             HStack {
                 if quantity > 0 {
                     // Show quantity controls
                     HStack {
                         Button {
+                            print("➖ Minus button tapped for: \(product.name)")
                             if quantity > 1 {
                                 quantity -= 1
                                 orderManager.updateCartItemQuantity(productId: product.id, quantity: quantity)
@@ -485,12 +504,14 @@ struct MenuProductCard: View {
                                 .background(AppColors.primaryGreen)
                                 .clipShape(RoundedRectangle(cornerRadius: 4))
                         }
+                        .buttonStyle(BorderlessButtonStyle()) // Prevent tap propagation
                         
                         Text("\(quantity)")
                             .font(.system(size: 14, weight: .semibold))
                             .frame(minWidth: 30)
                         
                         Button {
+                            print("➕ Plus button tapped for: \(product.name)")
                             quantity += 1
                             orderManager.updateCartItemQuantity(productId: product.id, quantity: quantity)
                         } label: {
@@ -501,13 +522,13 @@ struct MenuProductCard: View {
                                 .background(AppColors.primaryGreen)
                                 .clipShape(RoundedRectangle(cornerRadius: 4))
                         }
+                        .buttonStyle(BorderlessButtonStyle()) // Prevent tap propagation
                     }
                     .frame(maxWidth: .infinity)
                 } else {
                     // Show Add button
                     Button(action: {
-                        // ACTION: Put all logic here to ensure it gets triggered properly
-                        print("🔶 Add button tapped directly - should work!")
+                        print("➕ Add button tapped for: \(product.name)")
                         
                         var productToAdd = product
                         
@@ -530,32 +551,6 @@ struct MenuProductCard: View {
                                 name: productToAdd.name,
                                 description: productToAdd.description,
                                 price: productToAdd.price,
-                                restaurantId: restaurantId, // Set the correct restaurantId from the property
-                                category: productToAdd.category,
-                                isAvailable: productToAdd.isAvailable,
-                                rating: productToAdd.rating,
-                                extraTime: productToAdd.extraTime,
-                                photoId: productToAdd.photoId,
-                                isVeg: productToAdd.isVeg
-                            )
-                        }
-                        
-                        // SPECIAL FIX: For specific problematic products like Omelette
-                        if productToAdd.name.lowercased().contains("omlette") || 
-                           productToAdd.name.lowercased().contains("omelette") || 
-                           productToAdd.name.lowercased().contains("mixed soft") {
-                            print("🔧 Applying special handling for known problematic product: \(productToAdd.name)")
-                            
-                            // Ensure price is valid
-                            let validPrice = productToAdd.price > 0 ? productToAdd.price : 120.0
-                            print("📊 Current price: \(productToAdd.price), Using price: \(validPrice)")
-                            
-                            // Force set the restaurant ID using the parameter passed to this component
-                            productToAdd = Product(
-                                id: productToAdd.id,
-                                name: productToAdd.name,
-                                description: productToAdd.description,
-                                price: validPrice, // Use fixed price if current price is invalid
                                 restaurantId: restaurantId,
                                 category: productToAdd.category,
                                 isAvailable: productToAdd.isAvailable,
@@ -565,8 +560,6 @@ struct MenuProductCard: View {
                                 isVeg: productToAdd.isVeg
                             )
                         }
-                        
-                        print("🧩 Adding product: \(productToAdd.name), restaurantId: \(productToAdd.restaurantId)")
                         
                         // Set quantity first to show UI update
                         quantity = 1
@@ -584,7 +577,6 @@ struct MenuProductCard: View {
                             }
                         }
                     }) {
-                        // LABEL: Create the visual button here
                         HStack {
                             Spacer()
                             
@@ -608,8 +600,7 @@ struct MenuProductCard: View {
                         .background(showingAddedToast ? Color.green : AppColors.primaryGreen)
                         .cornerRadius(8)
                     }
-                    .buttonStyle(PlainButtonStyle()) // Remove any default button styling
-                    .contentShape(Rectangle()) // Ensure the entire area is tappable
+                    .buttonStyle(BorderlessButtonStyle()) // Prevent tap propagation
                 }
             }
             .frame(height: 36)
@@ -619,9 +610,6 @@ struct MenuProductCard: View {
         .cornerRadius(12)
         .shadow(color: Color.black.opacity(0.1), radius: 5, x: 0, y: 2)
         .frame(minWidth: 0, maxWidth: .infinity)
-        .onTapGesture {
-            onTap()
-        }
         .onAppear {
             // Check if already in cart
             quantity = orderManager.getQuantityInCart(productId: product.id)
@@ -632,6 +620,19 @@ struct MenuProductCard: View {
             // Check if already in favorites
             isFavorite = favoriteManager.isFavorite(product)
             print("   → Is favorite: \(isFavorite)")
+            
+            // Subscribe to favorite status change notifications
+            NotificationCenter.default.addObserver(forName: FavoriteManager.favoriteStatusChangedNotification, object: nil, queue: .main) { notification in
+                if let productId = notification.object as? String, productId == product.id {
+                    // Update our local state if this product's favorite status changed
+                    isFavorite = favoriteManager.isFavorite(product)
+                    print("📣 Notification received: Updated favorite status for \(product.name) to \(isFavorite)")
+                }
+            }
+        }
+        .onDisappear {
+            // Remove notification observer when view disappears
+            NotificationCenter.default.removeObserver(self, name: FavoriteManager.favoriteStatusChangedNotification, object: nil)
         }
     }
 }
@@ -705,8 +706,9 @@ struct ProductDetailModal: View {
                     
                     // Favorite button
                     Button {
-                        isFavorite.toggle()
                         favoriteManager.toggleFavorite(product)
+                        // Update local state to match the favoriteManager state
+                        isFavorite = favoriteManager.isFavorite(product)
                     } label: {
                         Image(systemName: isFavorite ? "heart.fill" : "heart")
                             .font(.system(size: 16))
@@ -883,6 +885,19 @@ struct ProductDetailModal: View {
             
             // Check if already in favorites
             isFavorite = favoriteManager.isFavorite(product)
+            
+            // Subscribe to favorite status change notifications
+            NotificationCenter.default.addObserver(forName: FavoriteManager.favoriteStatusChangedNotification, object: nil, queue: .main) { notification in
+                if let productId = notification.object as? String, productId == product.id {
+                    // Update our local state if this product's favorite status changed
+                    isFavorite = favoriteManager.isFavorite(product)
+                    print("📣 Modal: Notification received: Updated favorite status for \(product.name) to \(isFavorite)")
+                }
+            }
+        }
+        .onDisappear {
+            // Remove notification observer when view disappears
+            NotificationCenter.default.removeObserver(self, name: FavoriteManager.favoriteStatusChangedNotification, object: nil)
         }
     }
 }

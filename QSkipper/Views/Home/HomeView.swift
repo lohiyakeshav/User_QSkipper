@@ -23,6 +23,9 @@ class FavoriteManager: ObservableObject {
     
     private let userDefaultsKey = "favoriteDishes"
     
+    // Add notification name for favorite status changes
+    static let favoriteStatusChangedNotification = NSNotification.Name("FavoriteStatusChanged")
+    
     init() {
         loadFavorites()
     }
@@ -36,6 +39,9 @@ class FavoriteManager: ObservableObject {
             favoriteDishes.append(product)
         }
         saveFavorites()
+        
+        // Post notification that favorite status changed
+        NotificationCenter.default.post(name: FavoriteManager.favoriteStatusChangedNotification, object: product.id)
     }
     
     func isFavorite(_ product: Product) -> Bool {
