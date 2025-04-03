@@ -12,7 +12,7 @@ import SwiftUI // For accessing our app's Utils folder
 // NetworkUtils for handling common network operations
 class NetworkUtils {
     // Base URL for API endpoints
-    let baseURl = URL(string: "https://queueskipperbackend.onrender.com/")!
+    let baseURl = URL(string: "https://qskipperbackend.onrender.com/")!
     
     static let shared = NetworkUtils()
     
@@ -283,7 +283,7 @@ class NetworkUtils {
             print("❌ Fallback URL failed: \(error)")
             
             // Try using the backup hardcoded URL (render.com server)
-            let backupUrl = URL(string: "https://queueskipperbackend.onrender.com/get_All_Restaurant")!
+            let backupUrl = URL(string: "https://qskipperbackend.onrender.com/get_All_Restaurant")!
             print("🔄 Trying backup URL: \(backupUrl.absoluteString)")
             
             do {
@@ -1008,7 +1008,7 @@ enum NetworkError: Error {
 }
 
 struct APIEndpoints {
-    static let baseURL = "https://queueskipperbackend.onrender.com"
+    static let baseURL = "https://qskipperbackend.onrender.com"
     
     // Authentication endpoints
     static let register = baseURL + "/register"

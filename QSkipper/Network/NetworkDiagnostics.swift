@@ -8,7 +8,7 @@ class NetworkDiagnostics {
     /// Tests the connectivity to the backend API with a simple ping
     func testAPIConnectivity() async -> (isReachable: Bool, responseTime: TimeInterval, error: Error?) {
         let startTime = Date()
-        let url = URL(string: "https://queueskipperbackend.onrender.com/ping")!
+        let url = URL(string: "https://qskipperbackend.onrender.com/ping")!
         
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
@@ -47,7 +47,7 @@ class NetworkDiagnostics {
         var results = [String: Bool]()
         
         for (name, path) in endpoints {
-            let url = URL(string: "https://queueskipperbackend.onrender.com\(path)")!
+            let url = URL(string: "https://qskipperbackend.onrender.com\(path)")!
             var request = URLRequest(url: url)
             request.httpMethod = path == "/order-placed" || path == "/schedule-order-placed" ? "OPTIONS" : "GET"
             request.timeoutInterval = 10

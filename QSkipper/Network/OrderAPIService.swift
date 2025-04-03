@@ -102,7 +102,7 @@ enum OrderAPIError: Error {
 class OrderAPIService {
     static let shared = OrderAPIService()
     
-    private let baseURL = "https://queueskipperbackend.onrender.com"
+    private let baseURL = "https://qskipperbackend.onrender.com"
     private let maxRetries = 3
     
     private init() {}

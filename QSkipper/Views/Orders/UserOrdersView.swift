@@ -509,7 +509,7 @@ class UserOrdersViewModel: ObservableObject {
             await fetchAllRestaurants()
         }
         
-        let urlString = "https://queueskipperbackend.onrender.com/get-UserOrder/\(userId)"
+        let urlString = "https://qskipperbackend.onrender.com/get-UserOrder/\(userId)"
         
         guard let url = URL(string: urlString) else {
             print("🚫 Invalid URL")
@@ -679,7 +679,7 @@ class UserOrdersViewModel: ObservableObject {
     }
     
     func fetchRestaurantDetails(for restaurantId: String, completion: @escaping (Restaurant?) -> Void) {
-        let urlString = "https://queueskipperbackend.onrender.com/get_Restaurant/\(restaurantId)"
+        let urlString = "https://qskipperbackend.onrender.com/get_Restaurant/\(restaurantId)"
         
         guard let url = URL(string: urlString) else {
             completion(nil)
