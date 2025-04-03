@@ -24,6 +24,7 @@ struct QSkipperApp: App {
                 .environmentObject(favoriteManager)
                 .environmentObject(locationManager)
                 .environmentObject(tabSelection)
+                .preferredColorScheme(.light)
                 .safeAreaInset(edge: .top) {
                     Color.clear.frame(height: 0)
                 }
