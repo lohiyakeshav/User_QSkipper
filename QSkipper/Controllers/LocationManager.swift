@@ -56,7 +56,8 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         // Handle based on current status
         switch status {
         case .authorizedWhenInUse, .authorizedAlways:
-            // Already authorized, just request location
+            // Already authorized, just request location directly
+            // No need for background dispatching as CLLocationManager handles this asynchronously
             locationManager.requestLocation()
             
         case .notDetermined:
@@ -79,34 +80,27 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     }
     
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        // Update the stored authorization status
         self.locationStatus = manager.authorizationStatus
         
-        // Check if location services are enabled system-wide first
-        if CLLocationManager.locationServicesEnabled() {
-            switch manager.authorizationStatus {
-            case .authorizedWhenInUse, .authorizedAlways:
-                self.isLocationServiceAvailable = true
-                // Request a one-time location update instead of starting continuous updates
-                self.locationManager.requestLocation()
-            case .denied, .restricted:
-                self.isLocationServiceAvailable = false
-                self.error = "Location access denied"
-                // Use default location (Galgotias University)
-                self.location = self.defaultLocation
-                self.getPlaceName(for: self.defaultLocation)
-            case .notDetermined:
-                self.isLocationServiceAvailable = false
-                // We'll wait for the user to trigger requestLocation() explicitly or for a response to our authorization request
-            @unknown default:
-                self.isLocationServiceAvailable = false
-                self.error = "Unknown location authorization status"
-            }
-        } else {
-            // Location services are disabled system-wide
+        // Handle authorization status directly from the manager parameter
+        switch manager.authorizationStatus {
+        case .authorizedWhenInUse, .authorizedAlways:
+            self.isLocationServiceAvailable = true
+            // Request location directly - CLLocationManager already handles this asynchronously
+            locationManager.requestLocation()
+        case .denied, .restricted:
             self.isLocationServiceAvailable = false
-            self.error = "Location services are disabled"
+            self.error = "Location access denied"
+            // Use default location (Galgotias University)
             self.location = self.defaultLocation
             self.getPlaceName(for: self.defaultLocation)
+        case .notDetermined:
+            self.isLocationServiceAvailable = false
+            // We'll wait for the user to trigger requestLocation() explicitly
+        @unknown default:
+            self.isLocationServiceAvailable = false
+            self.error = "Unknown location authorization status"
         }
     }
     

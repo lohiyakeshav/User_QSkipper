@@ -108,6 +108,11 @@ struct RegisterView: View {
     @StateObject private var viewModel = RegisterViewModel()
     @Environment(\.presentationMode) var presentationMode
     @State private var animateContent = false
+    @FocusState private var focusedField: FocusField?
+    
+    enum FocusField {
+        case email, name
+    }
     
     var body: some View {
         ZStack {
@@ -178,6 +183,7 @@ struct RegisterView: View {
                             .autocapitalization(.none)
                             .keyboardType(.emailAddress)
                             .textContentType(.emailAddress)
+                            .focused($focusedField, equals: .email)
                     }
                     .opacity(animateContent ? 1 : 0)
                     .offset(y: animateContent ? 0 : 10)
@@ -197,6 +203,7 @@ struct RegisterView: View {
                                     .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                             )
                             .textContentType(.name)
+                            .focused($focusedField, equals: .name)
                     }
                     .opacity(animateContent ? 1 : 0)
                     .offset(y: animateContent ? 0 : 10)
@@ -254,6 +261,11 @@ struct RegisterView: View {
                 }
                 .padding(.horizontal, 20)
                 .frame(minHeight: UIScreen.main.bounds.height - 100)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                // Dismiss keyboard when tapping outside of the text fields
+                focusedField = nil
             }
             
             // Login Link

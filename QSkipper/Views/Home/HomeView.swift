@@ -298,19 +298,60 @@ struct HomeView: View {
                 print("🛒 HomeView: Setting showCartSheet to true")
                 showCartSheet = true
             }
+            
+            // Add notification observer for switching to Home tab from cart view
+            NotificationCenter.default.addObserver(
+                forName: NSNotification.Name("SwitchToHomeTab"),
+                object: nil,
+                queue: .main
+            ) { _ in
+                print("🔔 HomeView: Received SwitchToHomeTab notification")
+                withAnimation {
+                    selectedTab = .home
+                    TabSelection.shared.selectedTab = .home
+                }
+            }
         }
         .onDisappear {
             print("📱 HomeView: View disappeared")
-            print("🔔 HomeView: Removing OpenCart notification observer")
-            // Remove notification observer when view disappears
+            print("🔔 HomeView: Removing notification observers")
+            // Remove notification observers when view disappears
             NotificationCenter.default.removeObserver(
                 self,
                 name: NSNotification.Name("OpenCart"),
                 object: nil
             )
+            NotificationCenter.default.removeObserver(
+                self,
+                name: NSNotification.Name("SwitchToHomeTab"),
+                object: nil
+            )
         }
         .onChange(of: selectedTab) { newTab in
             print("🔄 HomeView: Tab changed to: \(newTab)")
+        }
+        .onChange(of: TabSelection.shared.selectedTab) { newTab in
+            print("🔄 HomeView: TabSelection.shared changed to: \(newTab)")
+            
+            // Ensure local state stays in sync with shared state
+            // Convert TabSelection.Tab to local Tab enum
+            let localTab: Tab
+            switch newTab {
+            case .home:
+                localTab = .home
+            case .favorites:
+                localTab = .favorites
+            case .orders:
+                localTab = .orders
+            case .profile:
+                localTab = .profile
+            }
+            
+            if localTab != selectedTab {
+                withAnimation {
+                    selectedTab = localTab
+                }
+            }
         }
         .onChange(of: showCartSheet) { newValue in
             print("🛒 HomeView: Cart sheet state changed to: \(newValue)")

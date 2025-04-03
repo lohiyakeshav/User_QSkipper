@@ -320,6 +320,7 @@ struct CartContentView: View {
 // MARK: - Empty Cart View
 struct EmptyCartView: View {
     @EnvironmentObject private var tabSelection: TabSelection
+    @Environment(\.presentationMode) var presentationMode
     
     var body: some View {
         VStack(spacing: 20) {
@@ -341,6 +342,14 @@ struct EmptyCartView: View {
             Button {
                 // Go to home tab to browse restaurants
                 tabSelection.selectedTab = .home
+                
+                // Dismiss the cart view to return to main UI
+                presentationMode.wrappedValue.dismiss()
+                
+                // Post a notification to ensure tab change is recognized by the app
+                DispatchQueue.main.async {
+                    NotificationCenter.default.post(name: NSNotification.Name("SwitchToHomeTab"), object: nil)
+                }
             } label: {
                 Text("Browse Restaurants")
                     .font(.system(size: 16, weight: .semibold))
@@ -356,6 +365,9 @@ struct EmptyCartView: View {
         }
         .frame(height: 400)
         .padding(.top, 40)
+        .onAppear {
+            print("👁️ EmptyCartView appeared")
+        }
     }
 }
 

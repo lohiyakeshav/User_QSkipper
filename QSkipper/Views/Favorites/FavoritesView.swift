@@ -55,25 +55,62 @@ struct FavoritesView: View {
                     .padding(.top, 20)
                     
                     if favoriteManager.favoriteDishes.isEmpty {
-                        VStack(spacing: 20) {
-                            Spacer()
-                            LottieWebAnimationView(
-                                webURL: "https://lottie.host/20b64309-9089-4464-a4c5-f9a1ab3dbba1/l5b3WsrLuK.lottie",
-                                loopMode: .loop,
-                                autoplay: true
-                            )
-                            .frame(width: 200, height: 200)
-                            Text("No favorite dishes yet")
-                                .font(AppFonts.subtitle)
-                                .foregroundColor(AppColors.mediumGray)
-                            Text("Add some dishes to your favorites from the menu")
-                                .font(AppFonts.body)
-                                .foregroundColor(AppColors.mediumGray)
-                                .multilineTextAlignment(.center)
-                                .padding(.horizontal, 40)
-                            Spacer()
+                        // Full-width container for the empty state
+                        ZStack {
+                            VStack(spacing: 20) {
+                                Spacer()
+                                LottieWebAnimationView(
+                                    webURL: "https://lottie.host/20b64309-9089-4464-a4c5-f9a1ab3dbba1/l5b3WsrLuK.lottie",
+                                    loopMode: .loop,
+                                    autoplay: true
+                                )
+                                .frame(width: 200, height: 200)
+                                Text("No favorite dishes yet")
+                                    .font(AppFonts.subtitle)
+                                    .foregroundColor(AppColors.mediumGray)
+                                    .multilineTextAlignment(.center)
+                                Text("Add some dishes to your favorites from the menu")
+                                    .font(AppFonts.body)
+                                    .foregroundColor(AppColors.mediumGray)
+                                    .multilineTextAlignment(.center)
+                                    .padding(.horizontal, 40)
+                                
+                                // Add a browse button to encourage user action
+                                Button {
+                                    print("🔄 FavoritesView: Browse Restaurants button tapped")
+                                    
+                                    // Set the tab selection in TabSelection singleton
+                                    tabSelection.selectedTab = .home
+                                    
+                                    // Post notification to ensure tab change is recognized by the HomeView
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                        print("🔔 FavoritesView: Posting SwitchToHomeTab notification")
+                                        NotificationCenter.default.post(
+                                            name: NSNotification.Name("SwitchToHomeTab"),
+                                            object: nil
+                                        )
+                                    }
+                                } label: {
+                                    HStack {
+                                        Image(systemName: "magnifyingglass")
+                                            .font(.system(size: 14))
+                                        Text("Browse Restaurants")
+                                            .font(.system(size: 16, weight: .semibold))
+                                    }
+                                    .foregroundColor(.white)
+                                    .frame(width: 220)
+                                    .padding(.vertical, 12)
+                                    .background(AppColors.primaryGreen)
+                                    .cornerRadius(10)
+                                }
+                                .padding(.top, 10)
+                                
+                                Spacer()
+                            }
+                            .padding(.top, 20)
+                            .frame(maxWidth: .infinity)
                         }
-                        .frame(height: 400)
+                        .frame(maxWidth: .infinity, minHeight: 500)
                     } else {
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 16)], spacing: 16) {
                             ForEach(favoriteManager.favoriteDishes) { product in

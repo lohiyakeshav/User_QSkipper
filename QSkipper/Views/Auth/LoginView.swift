@@ -82,6 +82,7 @@ class LoginViewModel: ObservableObject {
 struct LoginView: View {
     @StateObject private var viewModel = LoginViewModel()
     @State private var animateContent = false
+    @FocusState private var isFieldFocused: Bool
     
     var body: some View {
         ZStack {
@@ -138,6 +139,7 @@ struct LoginView: View {
                             .autocapitalization(.none)
                             .keyboardType(.emailAddress)
                             .textContentType(.emailAddress)
+                            .focused($isFieldFocused)
                     }
                     .opacity(animateContent ? 1 : 0)
                     .offset(y: animateContent ? 0 : 10)
@@ -193,6 +195,11 @@ struct LoginView: View {
                 .padding(.horizontal, 25)
                 .frame(minHeight: UIScreen.main.bounds.height)
                 .frame(maxWidth: .infinity)
+            }
+            .contentShape(Rectangle()) // Make entire ScrollView tappable
+            .onTapGesture {
+                // Dismiss keyboard when tapping outside text fields
+                isFieldFocused = false
             }
         }
         .navigationBarBackButtonHidden(true)

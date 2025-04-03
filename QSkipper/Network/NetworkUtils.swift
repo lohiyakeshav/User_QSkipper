@@ -464,19 +464,45 @@ class NetworkUtils {
         // Use the correct endpoint structure
         let urlString = "\(baseURl.absoluteString)get_all_product/\(restaurantId)"
         
-        print("📡 Fetching products from: \(urlString)")
+        print("📍 API CALL START: fetchProducts")
+        print("📡 URL: \(urlString)")
+        print("🔑 Restaurant ID: \(restaurantId)")
+        
+        // Track request time
+        let startTime = Date()
         
         guard let url = URL(string: urlString) else {
             print("❌ Invalid URL for products")
             throw NetworkUtilsError.NetworkError
         }
         
+        // Create a custom URLRequest to log headers
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        
+        // Log request headers
+        print("📤 Request Headers:")
+        for (key, value) in request.allHTTPHeaderFields ?? [:] {
+            print("   \(key): \(value)")
+        }
+        
         do {
             let (data, response) = try await URLSession.shared.data(from: url)
+            
+            // Calculate request time
+            let requestTime = Date().timeIntervalSince(startTime)
+            print("⏱️ Request completed in \(String(format: "%.2f", requestTime))s")
             
             guard let httpResponse = response as? HTTPURLResponse else {
                 print("❌ Invalid HTTP response")
                 throw NetworkUtilsError.NetworkError
+            }
+            
+            // Log response details
+            print("📥 Response Status: \(httpResponse.statusCode)")
+            print("📥 Response Headers:")
+            for (key, value) in httpResponse.allHeaderFields where key is String {
+                print("   \(key): \(value)")
             }
             
             if httpResponse.statusCode != 200 {
@@ -484,9 +510,15 @@ class NetworkUtils {
                 throw NetworkUtilsError.DishNotFound
             }
             
-            // Print the full response for debugging
+            // Print the data size
+            print("📦 Response Data Size: \(ByteCountFormatter.string(fromByteCount: Int64(data.count), countStyle: .file))")
+            
+            // Print the full response for debugging (limit to avoid console flooding)
             if let responseString = String(data: data, encoding: .utf8) {
-                print("📄 Full products response: \(responseString)")
+                let maxPreviewLength = 1000 // Limit preview length
+                let preview = responseString.count > maxPreviewLength ? 
+                    responseString.prefix(maxPreviewLength) + "... (truncated)" : responseString
+                print("📄 Response JSON Preview: \(preview)")
             }
             
             // Try to decode the response
@@ -496,6 +528,16 @@ class NetworkUtils {
                 // First, try to decode as ProductsResponse
                 let productsResponse = try decoder.decode(ProductsResponse.self, from: data)
                 print("✅ Successfully decoded \(productsResponse.products.count) products using ProductsResponse")
+                
+                // Log a summary of the first few products
+                if !productsResponse.products.isEmpty {
+                    print("📊 Products Summary:")
+                    for (index, product) in productsResponse.products.prefix(3).enumerated() {
+                        print("  Product \(index+1): ID=\(product.id), Name=\(product.name), Price=₹\(product.price), RestaurantID=\(product.restaurantId)")
+                    }
+                }
+                
+                print("📍 API CALL END: fetchProducts - Successful")
                 return productsResponse.products
             } catch let initialError {
                 print("❌ Initial JSON Parsing Error: \(initialError)")

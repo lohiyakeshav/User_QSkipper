@@ -38,14 +38,18 @@ class RestaurantDetailViewModel: ObservableObject {
         isLoading = true
         errorMessage = nil
         
+        print("📱 RESTAURANT DETAIL: Starting product load for restaurant ID: \(restaurantId)")
+        print("⏱️ Time: \(Date().formatted(date: .abbreviated, time: .standard))")
+        
         Task {
             do {
-                print("Loading products for restaurant: \(restaurantId)")
+                print("📡 RESTAURANT DETAIL: Calling networkUtils.fetchProducts")
                 var fetchedProducts = try await networkUtils.fetchProducts(for: restaurantId)
                 
                 // CRITICAL FIX: Ensure all products have the correct restaurantId
                 // This fixes the issue where some products might have empty or incorrect restaurantIds
                 if !fetchedProducts.isEmpty {
+                    var fixedProducts = 0
                     for i in 0..<fetchedProducts.count {
                         if fetchedProducts[i].restaurantId.isEmpty {
                             // Copy the product with corrected restaurantId
@@ -64,8 +68,11 @@ class RestaurantDetailViewModel: ObservableObject {
                                 isVeg: product.isVeg
                             )
                             fetchedProducts[i] = correctedProduct
-                            print("⚠️ Fixed empty restaurantId for product: \(correctedProduct.name)")
+                            fixedProducts += 1
                         }
+                    }
+                    if fixedProducts > 0 {
+                        print("🔧 RESTAURANT DETAIL: Fixed empty restaurantId for \(fixedProducts) products")
                     }
                 }
                 
@@ -73,12 +80,22 @@ class RestaurantDetailViewModel: ObservableObject {
                     self.products = fetchedProducts
                     self.extractCategories()
                     self.isLoading = false
+                    
+                    // Log product categories and count
+                    print("✅ RESTAURANT DETAIL: Loaded \(fetchedProducts.count) products across \(self.categories.count) categories")
+                    print("📋 Categories: \(self.categories.joined(separator: ", "))")
+                    
+                    // Log price range
+                    if let minPrice = fetchedProducts.map({ $0.price }).min(),
+                       let maxPrice = fetchedProducts.map({ $0.price }).max() {
+                        print("💰 Price range: ₹\(String(format: "%.2f", minPrice)) - ₹\(String(format: "%.2f", maxPrice))")
+                    }
                 }
             } catch {
                 await MainActor.run {
                     self.errorMessage = "Failed to load products: \(error.localizedDescription)"
                     self.isLoading = false
-                    print("Error loading products: \(error)")
+                    print("❌ RESTAURANT DETAIL: Error loading products: \(error)")
                 }
             }
         }
