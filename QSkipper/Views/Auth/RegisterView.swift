@@ -204,6 +204,14 @@ struct RegisterView: View {
                             )
                             .textContentType(.name)
                             .focused($focusedField, equals: .name)
+                        
+                        // Username suggestion hint
+                        if !viewModel.name.isEmpty {
+                            Text("Username Suggestion: \(viewModel.name.replacingOccurrences(of: " ", with: ""))")
+                                .font(.system(size: 14))
+                                .foregroundColor(.gray)
+                                .padding(.leading, 4)
+                        }
                     }
                     .opacity(animateContent ? 1 : 0)
                     .offset(y: animateContent ? 0 : 10)

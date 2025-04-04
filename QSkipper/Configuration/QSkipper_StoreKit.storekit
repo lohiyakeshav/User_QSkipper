@@ -15,23 +15,23 @@
   ],
   "products" : [
     {
-      "displayPrice" : "9.99",
+      "displayPrice" : "30.00",
       "familyShareable" : false,
       "groupNumber" : 1,
       "internalID" : "1",
       "localizations" : [
         {
-          "description" : "Order payment for QSkipper",
-          "displayName" : "Order Payment",
+          "description" : "Pay for your order (₹30.00)",
+          "displayName" : "Order Payment (₹30.00)",
           "locale" : "en_US"
         }
       ],
-      "productID" : "com.queueskipper.orderpayment",
+      "productID" : "com.qskipper.orderpayment",
       "referenceName" : "Order Payment",
       "type" : "Consumable"
     },
     {
-      "displayPrice" : "100.00",
+      "displayPrice" : "30.00",
       "familyShareable" : false,
       "groupNumber" : 2,
       "internalID" : "2",
@@ -50,7 +50,7 @@
   "settings" : {
     "_applicationInternalID" : "com.queueskipper",
     "_askToBuyEnabled" : false,
-    "_developerTeamID" : "YOUR_TEAM_ID",
+    "_developerTeamID" : "team.qskipper@gmail.com",
     "_failTransactionsEnabled" : false,
     "_lastSynchronizedDate" : 0,
     "_locale" : "en_US",

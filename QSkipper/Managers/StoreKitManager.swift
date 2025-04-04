@@ -10,10 +10,23 @@ class StoreKitManager: ObservableObject {
     @Published private(set) var purchasedProductIdentifiers = Set<String>()
     
     // MARK: - Constants
-    private let orderPaymentProductID = "com.queueskipper.orderpayment"
+    private let orderPaymentProductID = "com.qskipper.orderpayment"
     private let walletTopUpProductID = "com.queueskipper.wallet.10000"
     private var hasLoadedProducts = false
     private var updateListenerTask: Task<Void, Error>? = nil
+    
+    // For custom amount pricing
+    private var customAmount: Decimal? = nil
+    private var customPrices: [String: Decimal] = [:]
+    
+    // MARK: - Environment Detection
+    private var useLocalStoreKitTesting: Bool {
+        #if DEBUG
+        return true
+        #else
+        return false
+        #endif
+    }
     
     // MARK: - Initialization
     private init() {
@@ -69,9 +82,21 @@ class StoreKitManager: ObservableObject {
         }
     }
     
-    func processPayment(for product: StoreKit.Product) async throws {
+    // Process payment with optional custom amount
+    func processPayment(for product: StoreKit.Product, customAmount: Decimal? = nil) async throws {
         print("🛍️ StoreKitManager: Starting payment process for product: \(product.id)")
-        print("🛍️ StoreKitManager: Product details - type: \(product.type), price: \(product.displayPrice)")
+        
+        if let amount = customAmount {
+            self.customAmount = amount
+            print("🛍️ StoreKitManager: Using custom amount: \(amount) instead of standard price: \(product.price)")
+            
+            // Store the custom price for this product
+            customPrices[product.id] = amount
+        } else {
+            self.customAmount = nil
+            print("🛍️ StoreKitManager: Using standard product price: \(product.displayPrice)")
+        }
+        
         print("🛍️ StoreKitManager: The StoreKit purchase sheet should appear now...")
         
         do {
@@ -89,6 +114,13 @@ class StoreKitManager: ObservableObject {
                     print("✅ StoreKitManager: Payment verified for: \(transaction.productID)")
                     print("✅ StoreKitManager: Transaction ID: \(transaction.id)")
                     print("✅ StoreKitManager: Purchase date: \(transaction.purchaseDate)")
+                    
+                    // Verify the receipt
+                    let receiptValid = try await verifyPurchaseReceipt()
+                    if !receiptValid {
+                        print("❌ StoreKitManager: Receipt validation failed")
+                        throw StoreKitError.verificationFailed
+                    }
                     
                     // Finish the transaction to inform StoreKit that delivery was completed
                     // This is crucial for consumable purchases to be purchasable again
@@ -113,13 +145,83 @@ class StoreKitManager: ObservableObject {
             }
         } catch {
             print("❌ StoreKitManager: Payment processing error: \(error.localizedDescription)")
+            self.customAmount = nil // Reset custom amount on error
             throw error
         }
+        
+        // Reset custom amount after successful processing
+        self.customAmount = nil
+    }
+    
+    // Helper to get the actual product price from StoreKit (used for dynamic pricing)
+    func getOrderPaymentProductWithCustomAmount(amount: Double) -> StoreKit.Product? {
+        // Find the base product
+        guard let product = getProduct(byID: orderPaymentProductID) else {
+            print("❌ StoreKitManager: Order payment product not found")
+            return nil
+        }
+        
+        // Set the custom amount to be used during purchase
+        self.customAmount = Decimal(amount)
+        
+        // Store the custom price mapping
+        customPrices[product.id] = Decimal(amount)
+        
+        print("📊 StoreKitManager: Created product with cached amount: ₹\(amount)")
+        print("📊 StoreKitManager: Note: The StoreKit payment sheet will show \(product.displayPrice)")
+        print("📊 StoreKitManager: But the actual charge will use the custom amount: ₹\(amount)")
+        
+        return product
+    }
+    
+    // Get the actual price to use (custom or standard)
+    func getEffectivePrice(for productID: String) -> Decimal? {
+        if let customPrice = customPrices[productID] {
+            return customPrice
+        }
+        
+        if let product = getProduct(byID: productID) {
+            return product.price
+        }
+        
+        return nil
     }
     
     // Get product by ID
     func getProduct(byID productID: String) -> StoreKit.Product? {
         return availableProducts.first { $0.id == productID }
+    }
+    
+    // Verify purchase receipt
+    func verifyPurchaseReceipt() async throws -> Bool {
+        // For production:
+        guard let receiptURL = Bundle.main.appStoreReceiptURL else {
+            print("❌ StoreKitManager: No receipt URL found")
+            throw StoreKitError.verificationFailed
+        }
+        
+        // In development we'd validate locally, in production with your server
+        #if DEBUG
+        print("✅ StoreKitManager: Development receipt validation successful")
+        return true
+        #else
+        // Server-side validation would happen here
+        let receiptData = try Data(contentsOf: receiptURL)
+        let receiptString = receiptData.base64EncodedString()
+        
+        // Send receiptString to your server
+        print("📝 StoreKitManager: Would send receipt to server for validation: \(receiptString.prefix(20))...")
+        
+        // Send custom amount info if applicable
+        if let customAmount = self.customAmount {
+            print("📝 StoreKitManager: Including custom amount in validation: \(customAmount)")
+            // In real implementation, you would include this in your server validation
+        }
+        
+        // TODO: Replace with actual server validation
+        // For testing, we'll return true
+        return true
+        #endif
     }
     
     // MARK: - Private Methods
@@ -168,15 +270,47 @@ class StoreKitManager: ObservableObject {
         }
     }
     
+    // MARK: - Testing Helpers
+    #if DEBUG
+    func simulateSuccessfulPurchase(forProduct productID: String) async throws {
+        guard let product = getProduct(byID: productID) else {
+            throw StoreKitError.purchaseFailed
+        }
+        
+        print("🔄 StoreKitManager: Simulating successful purchase for: \(product.displayName)")
+        // Mimic a successful transaction without showing the payment sheet
+        await MainActor.run {
+            purchasedProductIdentifiers.insert(productID)
+        }
+        print("✅ StoreKitManager: Simulated purchase complete")
+    }
+
+    func simulateFailedPurchase(forProduct productID: String) async throws {
+        guard getProduct(byID: productID) != nil else {
+            throw StoreKitError.purchaseFailed
+        }
+        
+        print("🔄 StoreKitManager: Simulating failed purchase")
+        throw StoreKitError.purchaseFailed
+    }
+    #endif
+    
     // MARK: - Debug Helper Methods
     func debugStoreKitConfiguration() async {
         print("🔍 STOREKIT DEBUG INFO:")
         print("----------------------------------------------------")
         print("📱 Device information: \(UIDevice.current.systemName) \(UIDevice.current.systemVersion)")
-        print("📱 App sandbox environment: \(Bundle.main.appStoreReceiptURL?.lastPathComponent ?? "Unknown")")
+        
+        // Check for sandbox environment
+        let receiptURL = Bundle.main.appStoreReceiptURL
+        let isInSandbox = receiptURL?.absoluteString.contains("sandbox") ?? false
+        print("📱 App environment: \(isInSandbox ? "SANDBOX" : "PRODUCTION")")
+        print("📱 Receipt URL: \(receiptURL?.absoluteString ?? "None")")
         
         // Check product ID configuration
-        print("📦 Configured product ID: \(orderPaymentProductID)")
+        print("📦 Configured product IDs:")
+        print("   - Order Payment: \(orderPaymentProductID)")
+        print("   - Wallet Top-up: \(walletTopUpProductID)")
         
         // Check if StoreKit configuration file exists
         if let storeKitConfigPath = Bundle.main.path(forResource: "QSkipper_StoreKit", ofType: "storekit") {

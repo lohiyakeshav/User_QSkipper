@@ -166,7 +166,7 @@ class CartViewController: ObservableObject {
             
             // Process with StoreKit directly
             // Use the order payment product which should be configured as a consumable
-            if let orderProduct = StoreKitManager.shared.getProduct(byID: "com.queueskipper.orderpayment") {
+            if let orderProduct = StoreKitManager.shared.getProduct(byID: "com.qskipper.orderpayment") {
                 print("✅ CartViewController: Found StoreKit product for payment")
                 
                 do {

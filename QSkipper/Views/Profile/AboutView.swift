@@ -23,7 +23,7 @@ struct AboutView: View {
     // Team/Developer details
     let teamMembers = [
         ("Baniya Bros", "Full Stack Devs Org", "person.3.sequence.fill"),
-        ("Keshav Lohiya", "Mobile Developer", "person.circle.fill"),
+        ("Keshav Lohiya", "Full Stack Developer", "brain.fill"),
         ("Vinayak Bansal", "Full Stack Developer", "hammer.fill"),
         ("Priyanshu Gupta", "Full Stack Developer", "server.rack")
     ]

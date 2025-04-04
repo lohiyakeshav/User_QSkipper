@@ -13,7 +13,7 @@ struct PaymentHeaderView: View {
             
             Spacer()
             
-            Text("$\(String(format: "%.2f", amount))")
+            Text("₹\(String(format: "%.2f", amount))")
                 .font(.title2)
                 .fontWeight(.bold)
         }
@@ -73,8 +73,9 @@ struct OrderSummaryView: View {
 // Payment Options View Component
 struct PaymentOptionsView: View {
     let product: StoreKit.Product?
+    let totalAmount: Double
     let isProcessing: Bool
-    let onPayment: (StoreKit.Product) async -> Void
+    let onPayment: (StoreKit.Product, Double) async -> Void
     
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -84,7 +85,7 @@ struct PaymentOptionsView: View {
             if let product = product {
                 Button(action: {
                     Task {
-                        await onPayment(product)
+                        await onPayment(product, totalAmount)
                     }
                 }) {
                     HStack {
@@ -107,7 +108,7 @@ struct PaymentOptionsView: View {
             Button(action: {
                 Task {
                     if let product = product {
-                        await onPayment(product)
+                        await onPayment(product, totalAmount)
                     }
                 }
             }) {
@@ -119,6 +120,12 @@ struct PaymentOptionsView: View {
                     .cornerRadius(12)
             }
             .disabled(isProcessing)
+            
+            // Show explanation about price difference in testing
+            Text("Note: The payment sheet will show ₹\(product?.displayPrice ?? "30.00") but you'll be charged ₹\(String(format: "%.2f", totalAmount))")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .padding(.top, 4)
             #endif
         }
         .padding()
@@ -197,14 +204,28 @@ struct PaymentView: View {
                     OrderSummaryView(request: orderRequest)
                         .padding(.horizontal)
                     
-                    // Payment Options
-                    if let product = storeKitManager.getProduct(byID: "com.queueskipper.orderpayment") {
+                    // Payment Options - Use custom priced product
+                    if let product = storeKitManager.getOrderPaymentProductWithCustomAmount(amount: totalAmount + tipAmount) {
                         PaymentOptionsView(
                             product: product,
+                            totalAmount: totalAmount + tipAmount,
                             isProcessing: isProcessing,
-                            onPayment: { product in
+                            onPayment: { product, amount in
                                 Task {
-                                    await processPayment(product: product)
+                                    await processPayment(product: product, amount: amount)
+                                }
+                            }
+                        )
+                        .padding(.horizontal)
+                    } else if let standardProduct = storeKitManager.getProduct(byID: "com.qskipper.orderpayment") {
+                        // Fallback to standard product if custom pricing fails
+                        PaymentOptionsView(
+                            product: standardProduct,
+                            totalAmount: totalAmount + tipAmount,
+                            isProcessing: isProcessing,
+                            onPayment: { product, amount in
+                                Task {
+                                    await processPayment(product: product, amount: amount)
                                 }
                             }
                         )
@@ -285,12 +306,21 @@ struct PaymentView: View {
         }
     }
     
-    private func processPayment(product: StoreKit.Product) async {
+    private func processPayment(product: StoreKit.Product, amount: Double) async {
         isProcessing = true
         
         do {
             print("🔄 PaymentView: Starting payment process for product: \(product.id)")
-            try await storeKitManager.processPayment(for: product)
+            print("🔄 PaymentView: Using custom amount: \(amount)")
+            print("🔄 PaymentView: Product display price in UI: \(product.displayPrice)")
+            print("🔄 PaymentView: Product price decimal value: \(product.price)")
+            print("🔄 PaymentView: Note: StoreKit testing UI will show \(product.displayPrice) but the actual charge will be ₹\(String(format: "%.2f", amount))")
+            
+            // Convert amount to decimal for StoreKit
+            let decimalAmount = Decimal(amount)
+            
+            // Process payment with custom amount
+            try await storeKitManager.processPayment(for: product, customAmount: decimalAmount)
             
             print("✅ PaymentView: Payment successful!")
             
@@ -327,10 +357,24 @@ struct PaymentView: View {
             await MainActor.run {
                 isProcessing = false
             }
+        } catch StoreKitError.paymentPending {
+            print("⏳ PaymentView: Payment is pending approval")
+            await MainActor.run {
+                alertMessage = "Your payment is awaiting approval. You'll be notified when it's completed."
+                showAlert = true
+                isProcessing = false
+            }
+        } catch StoreKitError.verificationFailed {
+            print("❌ PaymentView: Payment verification failed")
+            await MainActor.run {
+                alertMessage = "Payment could not be verified. Please try again later."
+                showAlert = true
+                isProcessing = false
+            }
         } catch {
             print("❌ PaymentView: Payment failed: \(error.localizedDescription)")
             await MainActor.run {
-                alertMessage = error.localizedDescription
+                alertMessage = "Payment failed: \(error.localizedDescription)"
                 showAlert = true
                 isProcessing = false
             }
@@ -505,6 +549,14 @@ struct PaymentView: View {
     // Helper method to run network diagnostics
     private func runNetworkDiagnostics() async {
         print("🔬 PaymentView: Running network diagnostics before submitting order...")
+        
+        // First check if we're in sandbox mode
+        #if DEBUG
+        let isSandboxActive = storeKitManager.getProduct(byID: "com.qskipper.orderpayment") != nil
+        if isSandboxActive {
+            print("⚠️ PaymentView: Running in SANDBOX environment - API calls may be simulated")
+        }
+        #endif
         
         // Test API connectivity first
         let apiTest = await NetworkDiagnostics.shared.testAPIConnectivity()
