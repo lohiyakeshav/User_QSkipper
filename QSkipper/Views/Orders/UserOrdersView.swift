@@ -11,66 +11,91 @@ struct UserOrdersView: View {
     @StateObject private var viewModel = UserOrdersViewModel()
     @State private var searchText = ""
     @EnvironmentObject private var tabSelection: TabSelection
+    @State private var isSearching = false
+    @FocusState private var isSearchFieldFocused: Bool
     
     var body: some View {
         NavigationView {
-            VStack(spacing: 0) {
-                // Header
-                HStack {
-                    Spacer()
-                    
-                    Text("Your Orders")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundColor(AppColors.darkGray)
-                    
-                    Spacer()
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                .background(Color.white)
-                
-                // Search bar
-                HStack {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundColor(.gray)
-                    
-                    TextField("Search by restaurant or dish", text: $searchText)
-                        .font(.system(size: 16))
-                    
-                    Button {
-                        // Microphone search action
-                    } label: {
-                        Image(systemName: "mic")
-                            .foregroundColor(.gray)
+            ZStack {
+                VStack(spacing: 0) {
+                    // Header
+                    HStack {
+                        Spacer()
+                        
+                        Text("Your Orders")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundColor(AppColors.darkGray)
+                        
+                        Spacer()
                     }
-                }
-                .padding(.vertical, 8)
-                .padding(.horizontal, 12)
-                .background(Color.gray.opacity(0.1))
-                .cornerRadius(30)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                
-                if viewModel.isLoading {
-                    Spacer()
-                    ProgressView("Loading orders...")
-                    Spacer()
-                } else if viewModel.orders.isEmpty {
-                    EmptyOrdersView()
-                } else {
-                    ScrollView {
-                        LazyVStack(spacing: 16) {
-                            ForEach(viewModel.filteredOrders(searchText: searchText)) { order in
-                                OrderCard(order: order)
-                                    .padding(.horizontal, 16)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .background(Color.white)
+                    
+                    // Search bar
+                    HStack {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundColor(.gray)
+                        
+                        TextField("Search by restaurant or dish", text: $searchText)
+                            .font(.system(size: 16))
+                            .focused($isSearchFieldFocused)
+                            .onChange(of: isSearchFieldFocused) { newValue in
+                                isSearching = newValue
+                            }
+                        
+                        // Cancel button appears when searching
+                        if isSearching {
+                            Button {
+                                searchText = ""
+                                isSearchFieldFocused = false
+                            } label: {
+                                Text("Cancel")
+                                    .foregroundColor(AppColors.primaryGreen)
                             }
                         }
-                        .padding(.vertical, 8)
                     }
-                    .refreshable {
-                        // Pull to refresh functionality
-                        print("🔄 Pull-to-refresh triggered")
-                        viewModel.fetchOrders()
+                    .padding(.vertical, 8)
+                    .padding(.horizontal, 12)
+                    .background(Color.gray.opacity(0.1))
+                    .cornerRadius(30)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    
+                    if viewModel.isLoading {
+                        Spacer()
+                        ProgressView("Loading orders...")
+                        Spacer()
+                    } else if viewModel.orders.isEmpty {
+                        EmptyOrdersView()
+                    } else {
+                        ScrollView {
+                            LazyVStack(spacing: 16) {
+                                ForEach(viewModel.filteredOrders(searchText: searchText)) { order in
+                                    OrderCard(order: order)
+                                        .padding(.horizontal, 16)
+                                }
+                            }
+                            .padding(.vertical, 8)
+                        }
+                        .refreshable {
+                            // Pull to refresh functionality
+                            print("🔄 Pull-to-refresh triggered")
+                            viewModel.fetchOrders()
+                        }
+                        .simultaneousGesture(
+                            TapGesture().onEnded { _ in
+                                if isSearchFieldFocused {
+                                    isSearchFieldFocused = false
+                                }
+                            }
+                        )
+                    }
+                }
+                .onTapGesture {
+                    // Dismiss keyboard when tapping outside search field
+                    if isSearchFieldFocused {
+                        isSearchFieldFocused = false
                     }
                 }
             }

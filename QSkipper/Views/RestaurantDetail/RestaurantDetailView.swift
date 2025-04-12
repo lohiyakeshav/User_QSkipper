@@ -122,14 +122,15 @@ struct RestaurantDetailView: View {
                     .environmentObject(TabSelection.shared)) {
                     ZStack(alignment: .topTrailing) {
                         Circle()
-                            .fill(AppColors.primaryGreen.opacity(0.1))
-                            .frame(width: 38, height: 38)
+                            .fill(Color.white)
+                            .frame(width: 36, height: 36)
+                            .shadow(color: Color.black.opacity(0.2), radius: 2, x: 0, y: 1)
                         
                         Image(systemName: "cart.fill")
-                            .font(.system(size: 18))
+                            .font(.system(size: 16, weight: .semibold))
                             .foregroundColor(AppColors.primaryGreen)
                             .frame(width: 20, height: 20)
-                            .padding(9)
+                            .padding(8)
                         
                         // Show badge only if items in cart
                         if !orderManager.currentCart.isEmpty {

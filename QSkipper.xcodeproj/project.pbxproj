@@ -6,7 +6,13 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		7299C66F2DA85B1F007D6AD3 /* RazorpayCheckout in Frameworks */ = {isa = PBXBuildFile; productRef = 7299C66E2DA85B1F007D6AD3 /* RazorpayCheckout */; };
+		7299C6722DA85DA4007D6AD3 /* Razorpay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7299C6712DA85DA4007D6AD3 /* Razorpay.swift */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
+		7299C6712DA85DA4007D6AD3 /* Razorpay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Razorpay.swift; sourceTree = "<group>"; };
 		898C087D2D951976001043AF /* QSkipper.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = QSkipper.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -36,6 +42,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				7299C66F2DA85B1F007D6AD3 /* RazorpayCheckout in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -45,6 +52,7 @@
 		898C08742D951976001043AF = {
 			isa = PBXGroup;
 			children = (
+				7299C6712DA85DA4007D6AD3 /* Razorpay.swift */,
 				898C087F2D951976001043AF /* QSkipper */,
 				898C087E2D951976001043AF /* Products */,
 			);
@@ -78,6 +86,7 @@
 			);
 			name = QSkipper;
 			packageProductDependencies = (
+				7299C66E2DA85B1F007D6AD3 /* RazorpayCheckout */,
 			);
 			productName = QSkipper;
 			productReference = 898C087D2D951976001043AF /* QSkipper.app */;
@@ -107,6 +116,9 @@
 			);
 			mainGroup = 898C08742D951976001043AF;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				7299C66D2DA85B1F007D6AD3 /* XCRemoteSwiftPackageReference "razorpay-pod" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 898C087E2D951976001043AF /* Products */;
 			projectDirPath = "";
@@ -132,6 +144,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				7299C6722DA85DA4007D6AD3 /* Razorpay.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -345,6 +358,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		7299C66D2DA85B1F007D6AD3 /* XCRemoteSwiftPackageReference "razorpay-pod" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/razorpay/razorpay-pod.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.4.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		7299C66E2DA85B1F007D6AD3 /* RazorpayCheckout */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 7299C66D2DA85B1F007D6AD3 /* XCRemoteSwiftPackageReference "razorpay-pod" */;
+			productName = RazorpayCheckout;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 898C08752D951976001043AF /* Project object */;
 }

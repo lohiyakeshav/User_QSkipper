@@ -1020,6 +1020,68 @@ class NetworkUtils {
     }
 }
 
+// MARK: - Order Verification
+
+// for verifying payment
+//enum NetworkUtilsError: Error {
+//    case networkError
+//    case orderFailed
+//}
+//
+//class PaymentAPI {
+//    static let shared = PaymentAPI()
+//    private init() {}
+//
+//    private let baseURL = URL(string: "https://qskipperbackend.onrender.com")!
+//
+//    func verifyOrder(orderId: String) async throws {
+//        let url = baseURL.appendingPathComponent("verify-order")
+//
+//        struct VerifyOrderRequest: Codable {
+//            let order_id: String
+//        }
+//
+//        let payload = VerifyOrderRequest(order_id: orderId)
+//        let requestData = try JSONEncoder().encode(payload)
+//
+//        var request = URLRequest(url: url)
+//        request.httpMethod = "POST"
+//        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+//        request.httpBody = requestData
+//
+//        let maxRetries = 3
+//        var lastError: Error?
+//
+//        for attempt in 1...maxRetries {
+//            do {
+//                let (data, response) = try await URLSession.shared.data(for: request)
+//
+//                guard let httpResponse = response as? HTTPURLResponse else {
+//                    throw NetworkUtilsError.networkError
+//                }
+//
+//                if httpResponse.statusCode == 200 {
+//                    print("✅ Payment verified successfully!")
+//                    return
+//                } else {
+//                    print("❌ Server responded with status code: \(httpResponse.statusCode)")
+//                    throw NetworkUtilsError.orderFailed
+//                }
+//            } catch {
+//                lastError = error
+//                print("❌ Attempt \(attempt) failed: \(error.localizedDescription)")
+//                if attempt < maxRetries {
+//                    let delay = Double(attempt) * 0.5
+//                    try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+//                }
+//            }
+//        }
+//
+//        throw lastError ?? NetworkUtilsError.networkError
+//    }
+//}
+
+
 enum NetworkError: Error {
     case invalidURL
     case invalidResponse
@@ -1051,6 +1113,7 @@ enum NetworkError: Error {
 
 struct APIEndpoints {
     static let baseURL = "https://qskipperbackend.onrender.com"
+    static let verifyOrder = "\(baseURL)/verify-order"
     
     // Authentication endpoints
     static let register = baseURL + "/register"

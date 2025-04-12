@@ -176,6 +176,8 @@ struct HomeView: View {
     @State private var showCartSheet = false
     @State private var searchText = ""
     @State private var selectedCuisine: String? = nil
+    @State private var isSearching = false
+    @FocusState private var isSearchFieldFocused: Bool
     
     var filteredRestaurants: [Restaurant] {
         var result = viewModel.restaurants
@@ -423,14 +425,15 @@ struct HomeView: View {
                             .environmentObject(TabSelection.shared)) {
                             ZStack(alignment: .topTrailing) {
                                 Circle()
-                                    .fill(AppColors.primaryGreen.opacity(0.1))
-                                    .frame(width: 38, height: 38)
+                                    .fill(Color.white)
+                                    .frame(width: 36, height: 36)
+                                    .shadow(color: Color.black.opacity(0.2), radius: 2, x: 0, y: 1)
                                 
                                 Image(systemName: "cart.fill")
-                                    .font(.system(size: 18))
+                                    .font(.system(size: 16, weight: .semibold))
                                     .foregroundColor(AppColors.primaryGreen)
                                     .frame(width: 20, height: 20)
-                                    .padding(9)
+                                    .padding(8)
                                 
                                 // Show badge only if items in cart
                                 if !orderManager.currentCart.isEmpty {
@@ -451,7 +454,23 @@ struct HomeView: View {
                         
                         TextField("WHAT'S ON YOUR MIND?", text: $searchText)
                             .font(.system(size: 12))
-                            .foregroundColor(.gray)
+                            .foregroundColor(.black)
+                            .focused($isSearchFieldFocused)
+                            .onChange(of: isSearchFieldFocused) { newValue in
+                                isSearching = newValue
+                            }
+                            
+                        // Cancel button appears when searching
+                        if isSearching {
+                            Button {
+                                searchText = ""
+                                isSearchFieldFocused = false
+                            } label: {
+                                Text("Cancel")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(AppColors.primaryGreen)
+                            }
+                        }
                     }
                     .padding(.vertical, 12)
                     .padding(.horizontal, 15)
@@ -475,6 +494,19 @@ struct HomeView: View {
                     
                     // Add bottom padding to ensure content isn't hidden behind the tab bar
                     Spacer(minLength: 100)
+                }
+                .simultaneousGesture(
+                    TapGesture().onEnded { _ in
+                        if isSearchFieldFocused {
+                            isSearchFieldFocused = false
+                        }
+                    }
+                )
+            }
+            .onTapGesture {
+                // Dismiss keyboard when tapping outside search field
+                if isSearchFieldFocused {
+                    isSearchFieldFocused = false
                 }
             }
             .background(Color.white)

@@ -7,12 +7,13 @@
 
 import SwiftUI
 
+import SwiftUI
+
 struct CartView: View {
     @Environment(\.presentationMode) var presentationMode
     @EnvironmentObject private var orderManager: OrderManager
     @StateObject private var controller = CartViewController()
     @Environment(\.dismiss) private var dismiss
-    @State private var showPaymentView = false
     @State private var showCancelAlert = false
     @State private var showPaymentError = false
     @State private var errorMessage = ""
@@ -57,13 +58,31 @@ struct CartView: View {
                 CartContentView(
                     orderManager: orderManager,
                     controller: controller,
-                    showPaymentView: $showPaymentView,
+                    showPaymentView: .constant(false), // No longer needed, but kept for compatibility
                     showCancelAlert: $showCancelAlert,
                     showPaymentError: $showPaymentError,
                     errorMessage: $errorMessage,
                     currentUserId: currentUserId,
                     presentationMode: presentationMode
                 )
+                
+                // Place Order Button
+                if !orderManager.currentCart.isEmpty {
+                    Button(action: {
+                        controller.placeOrder()
+                    }) {
+                        Text(controller.isSchedulingOrder ? "Schedule Order" : "Place Order")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(AppColors.primaryGreen)
+                            .cornerRadius(12)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 20)
+                    .disabled(controller.isProcessing || orderManager.currentCart.isEmpty)
+                }
             }
             
             if controller.showOrderSuccess {
@@ -77,6 +96,8 @@ struct CartView: View {
                         )
                         .environmentObject(TabSelection.shared)
                     )
+                    .transition(.opacity)
+                    .animation(.easeInOut)
             }
             
             if controller.isProcessing {
@@ -116,49 +137,23 @@ struct CartView: View {
         } message: {
             Text(errorMessage)
         }
-        .navigationDestination(isPresented: $controller.showPaymentView) {
-            Group {
-                if let orderRequest = controller.currentOrderRequest {
-                    // Use explicit argument labels to avoid order dependency
-                    let restaurantName = controller.restaurant?.name ?? "Restaurant"
-                    let totalAmount = controller.getTotalAmount()
-                    let tipAmount = Double(controller.selectedTipAmount) / 100 * totalAmount
-                    
-                    PaymentView(
-                        cartManager: orderManager,
-                        orderRequest: orderRequest,
-                        restaurantName: restaurantName,
-                        totalAmount: totalAmount,
-                        tipAmount: tipAmount,
-                        isScheduledOrder: controller.isSchedulingOrder,
-                        scheduledTime: controller.isSchedulingOrder ? controller.scheduledDate : nil
-                    )
-                } else {
-                    Text("Unable to process order")
-                        .foregroundColor(.red)
-                }
-            }
-        }
         .onAppear {
-            // Load restaurant details
             controller.loadRestaurantDetails()
-            // Hide tab bar when view appears
             hideTabBar(true)
-            
-            // Add a slight delay to ensure the tab bar is hidden
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                 hideTabBar(true)
             }
         }
         .onDisappear {
-            // Show tab bar when view disappears
             hideTabBar(false)
         }
         .ignoresSafeArea(.keyboard)
-        // Use the view modifier as an additional measure
         .hideTabBar(true)
     }
     
+    // Assuming these helper methods exist elsewhere or need to be added
+    
+}
     // Function to hide tab bar more reliably
     private func hideTabBar(_ hidden: Bool) {
         // Update UITabBar appearance
@@ -239,7 +234,7 @@ struct CartView: View {
             }
         }
     }
-}
+
 
 // MARK: - Cart Content View
 struct CartContentView: View {
@@ -279,28 +274,6 @@ struct CartContentView: View {
                             }
                             
                             BillDetailsView(orderManager: orderManager, controller: controller)
-                            
-                            // Pay Now button inside ScrollView
-                            Button {
-                                print("🔄 Place Order button tapped")
-                                controller.placeOrder()
-                            } label: {
-                                if controller.isProcessing {
-                                    ProgressView()
-                                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                } else {
-                                    Text("Pay Now")
-                                        .font(.system(size: 16, weight: .semibold))
-                                }
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
-                            .background(orderManager.currentCart.isEmpty ? Color.gray : AppColors.primaryGreen)
-                            .foregroundColor(.white)
-                            .cornerRadius(12)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 16)
-                            .disabled(controller.isProcessing || orderManager.currentCart.isEmpty)
                         }
                         .padding(.bottom, 40)
                     }
@@ -316,7 +289,6 @@ struct CartContentView: View {
         }
     }
 }
-
 // MARK: - Empty Cart View
 struct EmptyCartView: View {
     @EnvironmentObject private var tabSelection: TabSelection
