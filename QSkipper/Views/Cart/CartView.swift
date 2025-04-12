@@ -66,23 +66,7 @@ struct CartView: View {
                     presentationMode: presentationMode
                 )
                 
-                // Place Order Button
-                if !orderManager.currentCart.isEmpty {
-                    Button(action: {
-                        controller.placeOrder()
-                    }) {
-                        Text(controller.isSchedulingOrder ? "Schedule Order" : "Place Order")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(AppColors.primaryGreen)
-                            .cornerRadius(12)
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 20)
-                    .disabled(controller.isProcessing || orderManager.currentCart.isEmpty)
-                }
+                // Place Order Button moved to CartContentView
             }
             
             if controller.showOrderSuccess {
@@ -274,8 +258,26 @@ struct CartContentView: View {
                             }
                             
                             BillDetailsView(orderManager: orderManager, controller: controller)
+                            
+                            // Place Order Button inside the ScrollView's VStack
+                            if !orderManager.currentCart.isEmpty {
+                                Button(action: {
+                                    controller.placeOrder()
+                                }) {
+                                    Text(controller.isSchedulingOrder ? "Schedule Order" : "Place Order")
+                                        .font(.system(size: 16, weight: .semibold))
+                                        .foregroundColor(.white)
+                                        .frame(maxWidth: .infinity)
+                                        .padding()
+                                        .background(AppColors.primaryGreen)
+                                        .cornerRadius(12)
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.top, 24)
+                                .padding(.bottom, 80) // Increased bottom padding to 80
+                                .disabled(controller.isProcessing || orderManager.currentCart.isEmpty)
+                            }
                         }
-                        .padding(.bottom, 40)
                     }
                 }
             }
@@ -835,6 +837,11 @@ struct SchedulePickerSheet: View {
                 Spacer()
                 
                 Button {
+                    // Reset to "Now" option when dismissing with X button
+                    isScheduled = false
+                    // Reset scheduled date to default (1 hour from now)
+                    selectedDate = Date().addingTimeInterval(3600)
+                    print("📅 Dismissed schedule picker with X. Reset to 'Now' option.")
                     presentationMode.wrappedValue.dismiss()
                 } label: {
                     Image(systemName: "xmark")
