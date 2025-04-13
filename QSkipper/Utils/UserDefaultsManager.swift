@@ -11,6 +11,7 @@ class UserDefaultsManager {
     static let shared = UserDefaultsManager()
     
     private let userDefaults = UserDefaults.standard
+    private let keychainManager = KeychainManager.shared
     
     // Keys
     private let tokenKey = "user_token"
@@ -25,11 +26,13 @@ class UserDefaultsManager {
     // MARK: - User Authentication
     
     func saveUserToken(_ token: String) {
-        userDefaults.set(token, forKey: tokenKey)
+        // Save token to keychain instead of UserDefaults for better security
+        // without triggering Apple ID verification
+        _ = keychainManager.saveString(token, forKey: tokenKey)
     }
     
     func getUserToken() -> String? {
-        return userDefaults.string(forKey: tokenKey)
+        return keychainManager.getString(forKey: tokenKey)
     }
     
     func saveUserId(_ userId: String) {
@@ -105,9 +108,13 @@ class UserDefaultsManager {
     
     // Clear all user-related data
     func clearUserData() {
-        for key in [userIdKey, userEmailKey, userNameKey, userPhoneKey, tokenKey] {
+        for key in [userIdKey, userEmailKey, userNameKey, userPhoneKey] {
             UserDefaults.standard.removeObject(forKey: key)
         }
+        
+        // Remove token from keychain
+        _ = keychainManager.deleteItem(forKey: tokenKey)
+        
         setUserLoggedIn(false)
     }
 } 
