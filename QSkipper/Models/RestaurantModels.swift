@@ -165,7 +165,7 @@ struct Restaurant: Identifiable, Codable {
         }
         
         // Handle location field
-        location = try container.decodeIfPresent(String.self, forKey: .location) ?? "Near Campus"
+        location = try container.decodeIfPresent(String.self, forKey: .location) ?? "\u{1F3EB} Campus Cafeteria"
     }
 }
 

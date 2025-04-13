@@ -524,7 +524,7 @@ struct DeliveryOptionsView: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Delivery Options")
+            Text("Order Options")
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundColor(AppColors.darkGray)
                 .padding(.horizontal, 16)
@@ -543,7 +543,7 @@ struct DeliveryOptionsView: View {
                             .font(.system(size: 15, weight: .medium))
                             .foregroundColor(controller.isSchedulingOrder ? AppColors.darkGray : AppColors.primaryGreen)
                         
-                        Text("As soon as possible")
+                        Text("Average time: \(controller.restaurant?.estimatedTime ?? "30-40") mins")
                             .font(.system(size: 12))
                             .foregroundColor(AppColors.mediumGray)
                     }
@@ -622,21 +622,10 @@ struct RestaurantDetailsView: View {
                         .frame(width: 60, height: 60)
                         .cornerRadius(8)
                     
-                    // Restaurant details
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(restaurant.name)
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(AppColors.darkGray)
-                        
-                        Text(restaurant.location)
-                            .font(.system(size: 14))
-                            .foregroundColor(AppColors.mediumGray)
-                            .lineLimit(2)
-                        
-                        Text(restaurant.estimatedTime != nil ? "\(restaurant.estimatedTime!) delivery time" : "30-40 min delivery time")
-                            .font(.system(size: 14))
-                            .foregroundColor(AppColors.mediumGray)
-                    }
+                    // Restaurant details - only name
+                    Text(restaurant.name)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(AppColors.darkGray)
                     
                     Spacer()
                 }
