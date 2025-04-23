@@ -244,7 +244,7 @@ struct CartContentView: View {
                     ScrollView {
                         VStack(spacing: 0) {
                             CartHeaderView()
-                            OrderTypeSelectionView(orderManager: orderManager)
+                            OrderTypeSelectionView(orderManager: orderManager, controller: controller)
                             CartItemsListView(orderManager: orderManager)
                             AddMoreButtonView(
                                 orderManager: orderManager,
@@ -363,164 +363,18 @@ struct CartHeaderView: View {
 // MARK: - Order Type Selection
 struct OrderTypeSelectionView: View {
     @ObservedObject var orderManager: OrderManager
-    
-    var body: some View {
-        VStack(spacing: 16) {
-            HStack {
-                Capsule()
-                    .fill(Color.gray.opacity(0.1))
-                    .frame(height: 40)
-                    .overlay(
-                        HStack(spacing: 0) {
-                            // Pick Up button
-                            Button {
-                                orderManager.selectedOrderType = .takeaway
-                            } label: {
-                                Text("Pick Up")
-                                    .font(.system(size: 14, weight: .medium))
-                                    .foregroundColor(orderManager.selectedOrderType == .takeaway ? .white : AppColors.darkGray)
-                                    .frame(maxWidth: .infinity)
-                                    .frame(height: 34)
-                                    .background(
-                                        orderManager.selectedOrderType == .takeaway ?
-                                        Capsule().fill(Color.green) : Capsule().fill(Color.clear)
-                                    )
-                                    .padding(3)
-                            }
-                            
-                            // Dine In button
-                            Button {
-                                orderManager.selectedOrderType = .dineIn
-                            } label: {
-                                Text("Dine In")
-                                    .font(.system(size: 14, weight: .medium))
-                                    .foregroundColor(orderManager.selectedOrderType == .dineIn ? .white : AppColors.darkGray)
-                                    .frame(maxWidth: .infinity)
-                                    .frame(height: 34)
-                                    .background(
-                                        orderManager.selectedOrderType == .dineIn ?
-                                        Capsule().fill(Color.green) : Capsule().fill(Color.clear)
-                                    )
-                                    .padding(3)
-                            }
-                        }
-                    )
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.bottom, 20)
-    }
-}
-
-// MARK: - Cart Items List
-struct CartItemsListView: View {
-    @ObservedObject var orderManager: OrderManager
-    
-    var body: some View {
-        VStack(spacing: 20) {
-            ForEach(orderManager.currentCart.indices, id: \.self) { index in
-                let item = orderManager.currentCart[index]
-                
-                HStack(spacing: 12) {
-                    // Product image
-                    ProductImageView(photoId: item.product.photoId, name: item.product.name, category: item.product.category)
-                        .frame(width: 60, height: 60)
-                        .cornerRadius(8)
-                    
-                    // Product details
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(item.product.name)
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundColor(AppColors.darkGray)
-                        
-                        Text("₹\(String(format: "%.2f", item.product.price))")
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundColor(AppColors.darkGray)
-                    }
-                    
-                    Spacer()
-                    
-                    // Quantity selector
-                    HStack {
-                        Button {
-                            if item.quantity > 1 {
-                                orderManager.decrementItem(at: index)
-                            } else {
-                                // When quantity is 1, remove item from cart
-                                orderManager.removeFromCart(productId: item.productId)
-                            }
-                        } label: {
-                            Text("−")
-                                .font(.system(size: 18, weight: .medium))
-                                .foregroundColor(.black)
-                                .frame(width: 36, height: 36)
-                        }
-                        .background(Color.gray.opacity(0.1))
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
-                        
-                        Text("\(item.quantity)")
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundColor(.black)
-                            .frame(width: 36, height: 36)
-                        
-                        Button {
-                            orderManager.incrementItem(at: index)
-                        } label: {
-                            Text("+")
-                                .font(.system(size: 18, weight: .medium))
-                                .foregroundColor(.black)
-                                .frame(width: 36, height: 36)
-                        }
-                        .background(Color.gray.opacity(0.1))
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
-                    }
-                }
-                .padding(.horizontal, 16)
-                
-                if index < orderManager.currentCart.count - 1 {
-                    Divider()
-                        .padding(.horizontal, 16)
-                }
-            }
-        }
-        .padding(.vertical, 20)
-        .background(Color.white)
-    }
-}
-
-// MARK: - Add More Button
-struct AddMoreButtonView: View {
-    @ObservedObject var orderManager: OrderManager
     @ObservedObject var controller: CartViewController
-    let presentationMode: Binding<PresentationMode>
     
     var body: some View {
-        Button {
-            presentationMode.wrappedValue.dismiss()
-        } label: {
-            HStack {
-                Spacer()
-                Image(systemName: "plus")
-                    .foregroundColor(AppColors.darkGray)
-                Text("Add more")
-                    .font(.system(size: 14))
-                    .foregroundColor(AppColors.darkGray)
-                Spacer()
-            }
-            .padding(.vertical, 12)
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-            )
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
-        }
+        // Empty view since the Pack my order is now moved to DeliveryOptionsView
+        EmptyView()
     }
 }
 
 // MARK: - Delivery Options
 struct DeliveryOptionsView: View {
     @ObservedObject var controller: CartViewController
+    @State private var packMyOrder: Bool = false
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -591,7 +445,37 @@ struct DeliveryOptionsView: View {
                 }
             }
             .padding(.horizontal, 16)
+            
+            // Pack My Order Button - Moved here from OrderTypeSelectionView
+            Toggle(isOn: $packMyOrder) {
+                HStack(spacing: 12) {
+                    Image(systemName: packMyOrder ? "checkmark.circle.fill" : "circle")
+                        .foregroundColor(packMyOrder ? AppColors.primaryGreen : AppColors.mediumGray)
+                        .font(.system(size: 20))
+                    
+                    Text("Pack my order")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(AppColors.darkGray)
+                }
+                .frame(height: 50)
+            }
+            .toggleStyle(CustomToggleStyle())
+            .onChange(of: packMyOrder) { newValue in
+                // Only update the controller's packMyOrder value
+                controller.packMyOrder = newValue
+                print("🛒 Pack my order changed to: \(newValue)")
+            }
+            .padding(.vertical, 8)
+            .padding(.horizontal, 8)
+            .background(Color.gray.opacity(0.05))
+            .cornerRadius(10)
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
             .padding(.bottom, 16)
+        }
+        .onAppear {
+            // Initialize packMyOrder from controller on appearance
+            packMyOrder = controller.packMyOrder
         }
     }
     
@@ -1206,6 +1090,126 @@ struct HideTabBarModifier: ViewModifier {
                     }
                 }
             }
+        }
+    }
+}
+
+// MARK: - Cart Items List
+struct CartItemsListView: View {
+    @ObservedObject var orderManager: OrderManager
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            ForEach(orderManager.currentCart.indices, id: \.self) { index in
+                let item = orderManager.currentCart[index]
+                
+                HStack(spacing: 12) {
+                    // Product image
+                    ProductImageView(photoId: item.product.photoId, name: item.product.name, category: item.product.category)
+                        .frame(width: 60, height: 60)
+                        .cornerRadius(8)
+                    
+                    // Product details
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(item.product.name)
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(AppColors.darkGray)
+                        
+                        Text("₹\(String(format: "%.2f", item.product.price))")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(AppColors.darkGray)
+                    }
+                    
+                    Spacer()
+                    
+                    // Quantity selector
+                    HStack {
+                        Button {
+                            if item.quantity > 1 {
+                                orderManager.decrementItem(at: index)
+                            } else {
+                                // When quantity is 1, remove item from cart
+                                orderManager.removeFromCart(productId: item.productId)
+                            }
+                        } label: {
+                            Text("−")
+                                .font(.system(size: 18, weight: .medium))
+                                .foregroundColor(.black)
+                                .frame(width: 36, height: 36)
+                        }
+                        .background(Color.gray.opacity(0.1))
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        
+                        Text("\(item.quantity)")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(.black)
+                            .frame(width: 36, height: 36)
+                        
+                        Button {
+                            orderManager.incrementItem(at: index)
+                        } label: {
+                            Text("+")
+                                .font(.system(size: 18, weight: .medium))
+                                .foregroundColor(.black)
+                                .frame(width: 36, height: 36)
+                        }
+                        .background(Color.gray.opacity(0.1))
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                    }
+                }
+                .padding(.horizontal, 16)
+                
+                if index < orderManager.currentCart.count - 1 {
+                    Divider()
+                        .padding(.horizontal, 16)
+                }
+            }
+        }
+        .padding(.vertical, 20)
+        .background(Color.white)
+    }
+}
+
+// MARK: - Add More Button
+struct AddMoreButtonView: View {
+    @ObservedObject var orderManager: OrderManager
+    @ObservedObject var controller: CartViewController
+    let presentationMode: Binding<PresentationMode>
+    
+    var body: some View {
+        Button {
+            presentationMode.wrappedValue.dismiss()
+        } label: {
+            HStack {
+                Spacer()
+                Image(systemName: "plus")
+                    .foregroundColor(AppColors.darkGray)
+                Text("Add more")
+                    .font(.system(size: 14))
+                    .foregroundColor(AppColors.darkGray)
+                Spacer()
+            }
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+            )
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+        }
+    }
+}
+
+// Custom toggle style to make it look like a radio button
+struct CustomToggleStyle: ToggleStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack {
+            configuration.label
+            Spacer()
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            configuration.isOn.toggle()
         }
     }
 }

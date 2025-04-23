@@ -21,6 +21,7 @@ class CartViewController: ObservableObject, RazorpayPaymentCompletionProtocol {
     @Published var selectedTipAmount: Int = 18
     @Published var currentOrderRequest: PlaceOrderRequest?
     @Published var orderId: String?
+    @Published var packMyOrder: Bool = false
     let tipOptions = [12, 18, 25]
     @Published var restaurant: Restaurant?
     
@@ -164,6 +165,10 @@ class CartViewController: ObservableObject, RazorpayPaymentCompletionProtocol {
         
         print("📤 CartViewController: Submitting order to \(isSchedulingOrder ? "schedule-order-placed" : "order-placed") API")
         
+        // Only set takeAway to true when packMyOrder is explicitly selected
+        // Don't take order type into account anymore
+        let takeAway = packMyOrder
+        
         var jsonDict: [String: Any] = [
             "restaurantId": orderRequest.restaurantId,
             "userId": orderRequest.userId,
@@ -176,7 +181,7 @@ class CartViewController: ObservableObject, RazorpayPaymentCompletionProtocol {
                 ]
             },
             "price": priceString,
-            "takeAway": true
+            "takeAway": takeAway
         ]
         
         if isSchedulingOrder {
