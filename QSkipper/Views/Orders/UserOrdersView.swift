@@ -414,6 +414,10 @@ struct OrderCard: View {
             return "Pending"
         case "preparing":
             return "Preparing"
+        case "placed":
+            return "Placed"
+        case "schduled":
+            return "Schduled"
         case "ready", "ready_for_pickup":
             return "Ready for pickup"
         case "completed":
@@ -421,7 +425,7 @@ struct OrderCard: View {
         case "cancelled":
             return "Cancelled"
         default:
-            return order.takeAway ? "" : "Picked up"
+            return "Processing"
         }
     }
     
