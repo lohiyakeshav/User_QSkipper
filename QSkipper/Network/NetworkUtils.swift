@@ -22,6 +22,7 @@ class NetworkUtils {
         case DishNotFound
         case RegistrationFailed
         case OrderFailed
+        case ScheduledOrderFailed(String)
         case LoginFailed
         case OTPVerificationFailed
         case NetworkError
@@ -39,6 +40,8 @@ class NetworkUtils {
                 return "Registration failed"
             case .OrderFailed:
                 return "Failed to place order"
+            case .ScheduledOrderFailed(let message):
+                return "Failed to place scheduled order: \(message)"
             case .LoginFailed:
                 return "Login failed"
             case .OTPVerificationFailed:
@@ -54,277 +57,48 @@ class NetworkUtils {
     // MARK: - Restaurant Endpoints
     
     func fetchRestaurant(with restaurantId: String) async throws -> Restaurant {
-        let url = baseURl.appendingPathComponent("get_Restaurant/\(restaurantId)")
+        // Delegate to APIClient
+        print("📡 NetworkUtils: Delegating fetchRestaurant to APIClient for ID: \(restaurantId)")
         
-        print("📡 Fetching restaurant details for ID: \(restaurantId) from: \(url.absoluteString)")
-        
-        let maxRetries = 3
-        var lastError: Error?
-        
-        for attempt in 1...maxRetries {
-            do {
-                print("🔄 Restaurant fetch attempt \(attempt)/\(maxRetries)")
-                
-                var request = URLRequest(url: url)
-                request.timeoutInterval = 15
-                
-                let (data, response) = try await URLSession.shared.data(for: request)
-                
-                guard let httpResponse = response as? HTTPURLResponse else {
-                    print("❌ Invalid HTTP response")
-                    throw NetworkUtilsError.NetworkError
-                }
-                
-                if httpResponse.statusCode != 200 {
-                    print("❌ HTTP Error: \(httpResponse.statusCode)")
-                    throw NetworkUtilsError.RestaurantNotFound
-                }
-                
-                // Print the response for debugging
-                if let responseString = String(data: data, encoding: .utf8) {
-                    print("📄 Restaurant response: \(responseString)")
-                }
-                
-                // Try to decode the response
-                do {
-                    // Try to decode as RestaurantResponse which has the {"restaurant": {...}} structure
-                    if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                       let restaurantData = json["restaurant"] as? [String: Any] {
-                        
-                        let id = restaurantData["_id"] as? String ?? restaurantId
-                        let name = restaurantData["name"] as? String ?? "Unknown Restaurant"
-                        let location = restaurantData["location"] as? String ?? "Unknown Location"
-                        let photoId = restaurantData["photoId"] as? String
-                        let rating = (restaurantData["rating"] as? NSNumber)?.doubleValue ?? 4.0
-                        let cuisine = restaurantData["cuisine"] as? String
-                        let estimatedTime = restaurantData["estimatedTime"] as? String
-                        
-                        let restaurant = Restaurant(
-                            id: id,
-                            name: name,
-                            estimatedTime: estimatedTime,
-                            cuisine: cuisine,
-                            photoId: photoId,
-                            rating: rating,
-                            location: location
-                        )
-                        
-                        print("✅ Successfully parsed restaurant: \(name)")
-                        return restaurant
-                    } else {
-                        print("❌ Could not extract restaurant data from JSON")
-                        throw NetworkUtilsError.JSONParsingError
-                    }
-                } catch {
-                    print("❌ JSON Parsing Error: \(error)")
-                    throw NetworkUtilsError.JSONParsingError
-                }
-            } catch {
-                lastError = error
-                print("❌ Restaurant fetch attempt \(attempt) failed: \(error.localizedDescription)")
-                
-                // Wait before retrying (exponential backoff)
-                if attempt < maxRetries {
-                    let delay = Double(attempt) * 0.5 // 0.5s, 1s, 1.5s
-                    print("⏱️ Waiting \(delay)s before retry...")
-                    try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-                }
+        do {
+            return try await APIClient.shared.fetchRestaurant(with: restaurantId)
+        } catch let error as APIClient.APIError {
+            print("❌ APIClient error: \(error.localizedDescription)")
+            
+            // Convert APIClient errors to NetworkUtils errors for backward compatibility
+            switch error {
+            case .serverError(let code, _) where code == 404:
+                throw NetworkUtilsError.RestaurantNotFound
+            case .decodingFailed:
+                throw NetworkUtilsError.JSONParsingError
+            default:
+                throw NetworkUtilsError.NetworkError
             }
+        } catch {
+            print("❌ Unexpected error: \(error.localizedDescription)")
+            throw NetworkUtilsError.NetworkError
         }
-        
-        // If all attempts failed, throw the last error or a default error
-        throw lastError ?? NetworkUtilsError.RestaurantNotFound
     }
     
     func fetchRestaurants() async throws -> [Restaurant] {
-        let url = baseURl.appendingPathComponent("get_All_Restaurant")
-        
-        print("📡 Fetching restaurants from: \(url.absoluteString)")
-        
-        // Add retry logic for resilience
-        let maxRetries = 3
-        var lastError: Error?
-        
-        for attempt in 1...maxRetries {
-            do {
-                print("🔄 Restaurant fetch attempt \(attempt)/\(maxRetries)")
-                
-                // Create a request with timeout settings
-                var request = URLRequest(url: url)
-                request.timeoutInterval = 15 // Shorter timeout (15 seconds instead of default 60)
-                
-                let (data, response) = try await URLSession.shared.data(for: request)
-                
-                guard let httpResponse = response as? HTTPURLResponse else {
-                    print("❌ Invalid HTTP response")
-                    throw NetworkUtilsError.NetworkError
-                }
-                
-                if httpResponse.statusCode != 200 {
-                    print("❌ HTTP Error: \(httpResponse.statusCode)")
-                    throw NetworkUtilsError.NetworkError
-                }
-                
-                // Print the response for debugging
-                if let responseString = String(data: data, encoding: .utf8) {
-                    print("📄 Restaurant response: \(responseString)")
-                    print("📄 Response length: \(data.count) bytes")
-                    print("📄 HTTP Status: \(httpResponse.statusCode)")
-                    
-                    // Print HTTP headers
-                    print("📄 HTTP Headers:")
-                    httpResponse.allHeaderFields.forEach { key, value in
-                        print("  \(key): \(value)")
-                    }
-                }
-                
-                // Try to decode the response
-                do {
-                    let decoder = JSONDecoder()
-                    
-                    // First try to decode as RestaurantsResponse which has the {"Restaurant": [...]} structure
-                    let restaurantsResponse = try decoder.decode(RestaurantsResponse.self, from: data)
-                    print("✅ Successfully decoded \(restaurantsResponse.restaurants.count) restaurants from RestaurantsResponse")
-                    return restaurantsResponse.restaurants
-                } catch {
-                    print("❌ JSON Parsing Error: \(error)")
-                    
-                    // If that fails, try alternate approach with dynamic key decoding
-                    do {
-                        if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                           let restaurantArray = json["Restaurant"] as? [[String: Any]] {
-                            print("✅ Found Restaurant array using manual JSON parsing, attempting to decode individual restaurants")
-                            
-                            // Convert back to data
-                            let restaurantData = try JSONSerialization.data(withJSONObject: restaurantArray)
-                            
-                            // Decode array of restaurants
-                            let restaurants = try JSONDecoder().decode([Restaurant].self, from: restaurantData)
-                            print("✅ Successfully decoded \(restaurants.count) restaurants with manual approach")
-                            return restaurants
-                        } else {
-                            print("❌ Could not extract Restaurant array from JSON")
-                            throw NetworkUtilsError.JSONParsingError
-                        }
-                    } catch {
-                        print("❌ Alternative parsing also failed: \(error)")
-                        throw NetworkUtilsError.JSONParsingError
-                    }
-                }
-            } catch {
-                lastError = error
-                print("❌ Restaurant fetch attempt \(attempt) failed: \(error.localizedDescription)")
-                
-                // Wait before retrying (exponential backoff)
-                if attempt < maxRetries {
-                    let delay = Double(attempt) * 0.5 // 0.5s, 1s, 1.5s
-                    print("⏱️ Waiting \(delay)s before retry...")
-                    try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-                }
-            }
-        }
-        
-        // Try alternate endpoint format (without /admin/)
-        print("🔄 Trying fallback URL for restaurants...")
-        let fallbackUrlString = "https://qskipper.com/api/get_All_Restaurant"
-        
-        guard let fallbackUrl = URL(string: fallbackUrlString) else {
-            print("❌ Failed to create fallback URL")
-            throw lastError ?? NetworkUtilsError.NetworkError
-        }
+        // Delegate to APIClient
+        print("📡 NetworkUtils: Delegating fetchRestaurants to APIClient")
         
         do {
-            print("📡 Trying fallback URL: \(fallbackUrlString)")
-            let (data, response) = try await URLSession.shared.data(from: fallbackUrl)
+            return try await APIClient.shared.fetchRestaurants()
+        } catch let error as APIClient.APIError {
+            print("❌ APIClient error: \(error.localizedDescription)")
             
-            guard let httpResponse = response as? HTTPURLResponse else {
-                print("❌ Invalid HTTP response from fallback URL")
-                throw NetworkUtilsError.NetworkError
-            }
-            
-            if httpResponse.statusCode != 200 {
-                print("❌ HTTP Error from fallback URL: \(httpResponse.statusCode)")
-                throw NetworkUtilsError.NetworkError
-            }
-            
-            // Try to decode with the same approaches as before
-            do {
-                let decoder = JSONDecoder()
-                
-                // First try RestaurantsResponse
-                if let restaurantsResponse = try? decoder.decode(RestaurantsResponse.self, from: data) {
-                    print("✅ Successfully decoded \(restaurantsResponse.restaurants.count) restaurants from fallback URL")
-                    return restaurantsResponse.restaurants
-                }
-                
-                // Try manual approach with Restaurant key
-                if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                   let restaurantArray = json["Restaurant"] as? [[String: Any]] {
-                    
-                    let restaurantData = try JSONSerialization.data(withJSONObject: restaurantArray)
-                    let restaurants = try JSONDecoder().decode([Restaurant].self, from: restaurantData)
-                    print("✅ Successfully decoded \(restaurants.count) restaurants from fallback URL with manual approach")
-                    return restaurants
-                }
-                
-                // Try direct array decoding as last resort
-                if let restaurants = try? decoder.decode([Restaurant].self, from: data) {
-                    print("✅ Successfully decoded \(restaurants.count) restaurants as direct array from fallback URL")
-                    return restaurants
-                }
-                
-                print("❌ All fallback parsing approaches failed")
+            // Convert APIClient errors to NetworkUtils errors for backward compatibility
+            switch error {
+            case .decodingFailed:
                 throw NetworkUtilsError.JSONParsingError
-            } catch {
-                print("❌ Fallback parsing failed: \(error)")
-                throw NetworkUtilsError.JSONParsingError
+            default:
+                throw NetworkUtilsError.NetworkError
             }
         } catch {
-            print("❌ Fallback URL failed: \(error)")
-            
-            // Try using the backup hardcoded URL (render.com server)
-            let backupUrl = URL(string: "https://qskipperbackend.onrender.com/get_All_Restaurant")!
-            print("🔄 Trying backup URL: \(backupUrl.absoluteString)")
-            
-            do {
-                let (data, response) = try await URLSession.shared.data(from: backupUrl)
-                
-                guard let httpResponse = response as? HTTPURLResponse else {
-                    print("❌ Invalid HTTP response from backup URL")
-                    throw NetworkUtilsError.NetworkError
-                }
-                
-                if httpResponse.statusCode != 200 {
-                    print("❌ HTTP Error from backup URL: \(httpResponse.statusCode)")
-                    throw NetworkUtilsError.NetworkError
-                }
-                
-                // Try all decoding approaches
-                if let restaurantsResponse = try? JSONDecoder().decode(RestaurantsResponse.self, from: data) {
-                    print("✅ Successfully decoded \(restaurantsResponse.restaurants.count) restaurants from backup URL")
-                    return restaurantsResponse.restaurants
-                }
-                
-                if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                   let restaurantArray = json["Restaurant"] as? [[String: Any]] {
-                    
-                    let restaurantData = try JSONSerialization.data(withJSONObject: restaurantArray)
-                    if let restaurants = try? JSONDecoder().decode([Restaurant].self, from: restaurantData) {
-                        print("✅ Successfully decoded \(restaurants.count) restaurants from backup URL with manual approach")
-                        return restaurants
-                    }
-                }
-                
-                // Last resort - try direct array
-                if let restaurants = try? JSONDecoder().decode([Restaurant].self, from: data) {
-                    print("✅ Successfully decoded \(restaurants.count) restaurants as direct array from backup URL")
-                    return restaurants
-                }
-                
-                // If all attempts failed, throw the error
-                print("❌ Backup URL also failed: \(error)")
-                throw lastError ?? NetworkUtilsError.RestaurantNotFound
-            }
+            print("❌ Unexpected error: \(error.localizedDescription)")
+            throw NetworkUtilsError.NetworkError
         }
     }
     
@@ -335,282 +109,130 @@ class NetworkUtils {
             return cachedImage
         }
         
-        // Use the correct endpoint structure
-        let urlString = "\(baseURl.absoluteString)get_restaurant_photo/\(photoId)"
-        
-        print("📡 Fetching restaurant image from: \(urlString)")
-        
-        guard let url = URL(string: urlString) else {
-            print("❌ Invalid URL for restaurant image")
-            throw NetworkUtilsError.NetworkError
-        }
-        
-        // Add retry logic for network resilience
-        let maxRetries = 3
-        var lastError: Error?
-        
-        for attempt in 1...maxRetries {
-            do {
-                print("🔄 Restaurant image fetch attempt \(attempt)/\(maxRetries) for ID: \(photoId)")
-                
-                // Create a request with timeout settings
-                var request = URLRequest(url: url)
-                request.timeoutInterval = 15 // Shorter timeout (15 seconds instead of default 60)
-                
-                let (data, response) = try await URLSession.shared.data(for: request)
-                
-                guard let httpResponse = response as? HTTPURLResponse else {
-                    print("❌ Invalid HTTP response")
-                    throw NetworkUtilsError.NetworkError
-                }
-                
-                if httpResponse.statusCode != 200 {
-                    print("❌ HTTP Error: \(httpResponse.statusCode)")
-                    throw NetworkUtilsError.ImageNotFound
-                }
-                
-                guard let image = UIImage(data: data) else {
-                    print("❌ Could not create image from data")
-                    throw NetworkUtilsError.ImageNotFound
-                }
-                
-                // Cache the loaded image
-                ImageCache.shared.setImage(image, forKey: "restaurant_\(photoId)")
-                
-                print("✅ Successfully loaded restaurant image")
-                return image
-                
-            } catch {
-                lastError = error
-                print("❌ Attempt \(attempt) failed: \(error.localizedDescription)")
-                
-                // Wait before retrying (exponential backoff)
-                if attempt < maxRetries {
-                    let delay = Double(attempt) * 0.5 // 0.5s, 1s, 1.5s
-                    print("⏱️ Waiting \(delay)s before retry...")
-                    try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-                }
-            }
-        }
-        
-        // All attempts failed, try a fallback solution
-        print("🔄 Trying fallback solution after \(maxRetries) failed attempts...")
-        
-        // Try alternate endpoint format (without /admin/)
-        let fallbackUrlString = "https://qskipper.com/api/get_restaurant_photo/\(photoId)"
-        
-        guard let fallbackUrl = URL(string: fallbackUrlString) else {
-            print("❌ Failed to create fallback URL")
-            throw lastError ?? NetworkUtilsError.ImageNotFound
-        }
+        // Delegate to APIClient for image loading with user-initiated priority
+        print("📡 NetworkUtils: Delegating fetchRestaurantImage to APIClient for ID: \(photoId)")
         
         do {
-            print("📡 Trying fallback URL: \(fallbackUrlString)")
-            let (data, response) = try await URLSession.shared.data(from: fallbackUrl)
+            let urlString = "\(baseURl.absoluteString)get_restaurant_photo/\(photoId)"
             
-            guard let httpResponse = response as? HTTPURLResponse else {
-                print("❌ Invalid HTTP response from fallback URL")
-                throw NetworkUtilsError.NetworkError
-            }
+            // Use a higher priority task but await its result directly
+            let image = try await APIClient.shared.loadImage(from: urlString)
             
-            if httpResponse.statusCode != 200 {
-                print("❌ HTTP Error from fallback URL: \(httpResponse.statusCode)")
-                throw NetworkUtilsError.ImageNotFound
-            }
-            
-            guard let image = UIImage(data: data) else {
-                print("❌ Could not create image from fallback data")
-                throw NetworkUtilsError.ImageNotFound
-            }
-            
-            // Cache the loaded image
+            // Cache the image to maintain compatibility with old code 
             ImageCache.shared.setImage(image, forKey: "restaurant_\(photoId)")
             
-            print("✅ Successfully loaded restaurant image from fallback URL")
             return image
+        } catch let error as APIClient.APIError {
+            print("❌ APIClient error: \(error.localizedDescription)")
             
-        } catch {
-            print("❌ Failed to load restaurant image (including fallback): \(error)")
-            
-            // Return a placeholder image instead of throwing an error
-            if let placeholderImage = UIImage(systemName: "fork.knife") {
-                print("⚠️ Using system placeholder image")
-                return placeholderImage
-            }
-            
-            // If even the system placeholder fails, create a simple colored image
-            let renderer = UIGraphicsImageRenderer(size: CGSize(width: 100, height: 100))
-            let placeholderImage = renderer.image { ctx in
-                let gradient = CGGradient(
-                    colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                    colors: [UIColor(red: 1, green: 0.6, blue: 0.4, alpha: 1).cgColor, 
-                             UIColor(red: 1, green: 0.4, blue: 0.4, alpha: 1).cgColor] as CFArray,
-                    locations: [0, 1]
-                )!
+            // Create a fallback image with restaurant ID that's consistent
+            let renderer = UIGraphicsImageRenderer(size: CGSize(width: 200, height: 150))
+            let fallbackImage = renderer.image { ctx in
+                // Background gradient based on photoId for consistency
+                let hash = abs(photoId.hash)
                 
-                let startPoint = CGPoint(x: 0, y: 0)
-                let endPoint = CGPoint(x: 100, y: 100)
-                ctx.cgContext.drawLinearGradient(gradient, start: startPoint, end: endPoint, options: [])
+                // Create gradient colors based on hash
+                let startRed = CGFloat((hash & 0xFF0000) >> 16) / 255.0
+                let startGreen = CGFloat((hash & 0x00FF00) >> 8) / 255.0
+                let startBlue = CGFloat(hash & 0x0000FF) / 255.0
+                let startColor = UIColor(red: max(0.3, startRed), 
+                                       green: max(0.3, startGreen), 
+                                       blue: max(0.3, startBlue), 
+                                       alpha: 1.0)
+                
+                let endRed = min(1.0, startRed + 0.3)
+                let endGreen = min(1.0, startGreen + 0.3)
+                let endBlue = min(1.0, startBlue + 0.3)
+                let endColor = UIColor(red: endRed, green: endGreen, blue: endBlue, alpha: 1.0)
+                
+                // Draw gradient
+                let colors = [startColor.cgColor, endColor.cgColor]
+                let colorSpace = CGColorSpaceCreateDeviceRGB()
+                let colorLocations: [CGFloat] = [0.0, 1.0]
+                
+                if let gradient = CGGradient(colorsSpace: colorSpace, 
+                                           colors: colors as CFArray, 
+                                           locations: colorLocations) {
+                    ctx.cgContext.drawLinearGradient(gradient, 
+                                                 start: CGPoint(x: 0, y: 0),
+                                                 end: CGPoint(x: 200, y: 150),
+                                                 options: [])
+                }
+                
+                // Restaurant icon
+                let icon = UIImage(systemName: "fork.knife")
+                if let icon = icon {
+                    let iconRect = CGRect(x: 85, y: 40, width: 30, height: 30)
+                    icon.draw(in: iconRect, blendMode: .normal, alpha: 0.8)
+                }
+                
+                // Draw restaurant ID text
+                let idText = "ID: " + String(photoId.suffix(6))
+                let attrs: [NSAttributedString.Key: Any] = [
+                    .font: UIFont.systemFont(ofSize: 12),
+                    .foregroundColor: UIColor.white
+                ]
+                
+                let textSize = (idText as NSString).size(withAttributes: attrs)
+                let textRect = CGRect(
+                    x: (200 - textSize.width) / 2,
+                    y: 90,
+                    width: textSize.width,
+                    height: textSize.height
+                )
+                
+                (idText as NSString).draw(in: textRect, withAttributes: attrs)
             }
             
-            print("⚠️ Using generated placeholder image")
-            return placeholderImage
+            // Cache the fallback
+            ImageCache.shared.setImage(fallbackImage, forKey: "restaurant_\(photoId)")
+            
+            return fallbackImage
+        } catch {
+            // For unknown errors, create a simpler fallback
+            print("❌ Unexpected error: \(error.localizedDescription)")
+            throw NetworkUtilsError.ImageNotFound
         }
     }
     
-    // MARK: - Product Endpoints
+    // MARK: - Product/Menu Endpoints
     
-    func fetchProducts(for restaurantId: String) async throws -> [Product] {
-        // Use the correct endpoint structure
-        let urlString = "\(baseURl.absoluteString)get_all_product/\(restaurantId)"
-        
-        print("📍 API CALL START: fetchProducts")
-        print("📡 URL: \(urlString)")
-        print("🔑 Restaurant ID: \(restaurantId)")
-        
-        // Track request time
-        let startTime = Date()
-        
-        guard let url = URL(string: urlString) else {
-            print("❌ Invalid URL for products")
-            throw NetworkUtilsError.NetworkError
-        }
-        
-        // Create a custom URLRequest to log headers
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        
-        // Log request headers
-        print("📤 Request Headers:")
-        for (key, value) in request.allHTTPHeaderFields ?? [:] {
-            print("   \(key): \(value)")
-        }
+    func fetchMenu(for restaurantId: String) async throws -> [Product] {
+        print("📡 NetworkUtils: Delegating fetchMenu to APIClient for restaurant: \(restaurantId)")
         
         do {
-            let (data, response) = try await URLSession.shared.data(from: url)
+            let sanitizedId = restaurantId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? restaurantId
+            let data = try await APIClient.shared.request(
+                path: "/get_all_product/\(sanitizedId)"
+            )
             
-            // Calculate request time
-            let requestTime = Date().timeIntervalSince(startTime)
-            print("⏱️ Request completed in \(String(format: "%.2f", requestTime))s")
-            
-            guard let httpResponse = response as? HTTPURLResponse else {
-                print("❌ Invalid HTTP response")
-                throw NetworkUtilsError.NetworkError
-            }
-            
-            // Log response details
-            print("📥 Response Status: \(httpResponse.statusCode)")
-            print("📥 Response Headers:")
-            for (key, value) in httpResponse.allHeaderFields where key is String {
-                print("   \(key): \(value)")
-            }
-            
-            if httpResponse.statusCode != 200 {
-                print("❌ HTTP Error: \(httpResponse.statusCode)")
-                throw NetworkUtilsError.DishNotFound
-            }
-            
-            // Print the data size
-            print("📦 Response Data Size: \(ByteCountFormatter.string(fromByteCount: Int64(data.count), countStyle: .file))")
-            
-            // Print the full response for debugging (limit to avoid console flooding)
-            if let responseString = String(data: data, encoding: .utf8) {
-                let maxPreviewLength = 1000 // Limit preview length
-                let preview = responseString.count > maxPreviewLength ? 
-                    responseString.prefix(maxPreviewLength) + "... (truncated)" : responseString
-                print("📄 Response JSON Preview: \(preview)")
-            }
-            
-            // Try to decode the response
+            // Try to decode the response using the same logic from the original method
             do {
                 let decoder = JSONDecoder()
                 
-                // First, try to decode as ProductsResponse
+                // First try to decode as ProductsResponse which has the {"products": [...]} structure
                 let productsResponse = try decoder.decode(ProductsResponse.self, from: data)
-                print("✅ Successfully decoded \(productsResponse.products.count) products using ProductsResponse")
-                
-                // Log a summary of the first few products
-                if !productsResponse.products.isEmpty {
-                    print("📊 Products Summary:")
-                    for (index, product) in productsResponse.products.prefix(3).enumerated() {
-                        print("  Product \(index+1): ID=\(product.id), Name=\(product.name), Price=₹\(product.price), RestaurantID=\(product.restaurantId)")
-                    }
-                }
-                
-                print("📍 API CALL END: fetchProducts - Successful")
                 return productsResponse.products
-            } catch let initialError {
-                print("❌ Initial JSON Parsing Error: \(initialError)")
-                
-                // If that fails, try manual JSON parsing to extract the products
-                do {
-                    // Try various potential structures
-                    if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                        // Look for products array under various keys
-                        let possibleKeys = ["products", "Products", "items", "dishes", "menuItems", "allProducts"]
-                        
-                        for key in possibleKeys {
-                            if let productsArray = json[key] as? [[String: Any]] {
-                                print("✅ Found products array using key: \(key)")
-                                
-                                // Convert back to data
-                                let productsData = try JSONSerialization.data(withJSONObject: productsArray)
-                                
-                                // Decode array of products
-                                let products = try JSONDecoder().decode([Product].self, from: productsData)
-                                print("✅ Successfully decoded \(products.count) products with manual approach")
-                                return products
-                            }
-                        }
-                        
-                        // If we get here, try to see if it's a direct array
-                        if let productsArray = json as? [[String: Any]] {
-                            print("✅ Found products as direct root array")
-                            
-                            // Convert back to data
-                            let productsData = try JSONSerialization.data(withJSONObject: productsArray)
-                            
-                            // Decode array of products
-                            let products = try JSONDecoder().decode([Product].self, from: productsData)
-                            print("✅ Successfully decoded \(products.count) products from root array")
-                            return products
-                        }
-                        
-                        // If we get here, we couldn't find a recognized structure
-                        print("❌ Could not find products array in JSON with known keys")
-                        
-                        // Last attempt: let's try to use the custom decoder in ProductsResponse directly
-                        if initialError is DecodingError {
-                            let newDecoder = JSONDecoder()
-                            let productsResponse = try newDecoder.decode(ProductsResponse.self, from: data)
-                            print("✅ Successfully decoded \(productsResponse.products.count) products using ProductsResponse fallback")
-                            return productsResponse.products
-                        }
-                    } else if let directArray = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
-                        // The response might be a direct array
-                        print("✅ Response is a direct array")
-                        
-                        // Convert back to data
-                        let productsData = try JSONSerialization.data(withJSONObject: directArray)
-                        
-                        // Decode array of products
-                        let products = try JSONDecoder().decode([Product].self, from: productsData)
-                        print("✅ Successfully decoded \(products.count) products from direct array")
-                        return products
-                    }
-                } catch let fallbackError {
-                    print("❌ Fallback parsing also failed: \(fallbackError)")
+            } catch {
+                // If that fails, try alternate approach
+                if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let productsArray = json["products"] as? [[String: Any]] {
+                    let productsData = try JSONSerialization.data(withJSONObject: productsArray)
+                    return try JSONDecoder().decode([Product].self, from: productsData)
                 }
                 
-                // If all parsing attempts fail, return empty array
-                print("⚠️ All parsing attempts failed - returning empty array")
+                // If all approaches fail, return empty array for compatibility
                 return []
             }
-            
         } catch {
-            print("❌ Network request failed: \(error)")
-            throw NetworkUtilsError.NetworkError
+            print("❌ APIClient error: \(error.localizedDescription)")
+            throw NetworkUtilsError.DishNotFound
         }
+    }
+    
+    // Add a method to fetch products (alias for fetchMenu for backward compatibility)
+    func fetchProducts(for restaurantId: String) async throws -> [Product] {
+        return try await fetchMenu(for: restaurantId)
     }
     
     func fetchProductImage(photoId: String) async throws -> UIImage {
@@ -620,402 +242,222 @@ class NetworkUtils {
             return cachedImage
         }
         
-        // Use the correct endpoint structure
-        let urlString = "\(baseURl.absoluteString)get_product_photo/\(photoId)"
-        
-        print("📡 Fetching product image from: \(urlString)")
-        
-        guard let url = URL(string: urlString) else {
-            print("❌ Invalid URL for product image")
-            throw NetworkUtilsError.NetworkError
-        }
-        
-        // Add retry logic for network resilience
-        let maxRetries = 3
-        var lastError: Error?
-        
-        for attempt in 1...maxRetries {
-            do {
-                print("🔄 Image fetch attempt \(attempt)/\(maxRetries) for ID: \(photoId)")
-                
-                // Create a request with timeout settings
-                var request = URLRequest(url: url)
-                request.timeoutInterval = 15 // Shorter timeout (15 seconds instead of default 60)
-                
-                let (data, response) = try await URLSession.shared.data(for: request)
-                
-                guard let httpResponse = response as? HTTPURLResponse else {
-                    print("❌ Invalid HTTP response")
-                    throw NetworkUtilsError.NetworkError
-                }
-                
-                if httpResponse.statusCode != 200 {
-                    print("❌ HTTP Error: \(httpResponse.statusCode)")
-                    throw NetworkUtilsError.ImageNotFound
-                }
-                
-                guard let image = UIImage(data: data) else {
-                    print("❌ Could not create image from data")
-                    throw NetworkUtilsError.ImageNotFound
-                }
-                
-                // Cache the loaded image
-                ImageCache.shared.setImage(image, forKey: "product_\(photoId)")
-                
-                print("✅ Successfully loaded product image")
-                return image
-                
-            } catch {
-                lastError = error
-                print("❌ Attempt \(attempt) failed: \(error.localizedDescription)")
-                
-                // Wait before retrying (exponential backoff)
-                if attempt < maxRetries {
-                    let delay = Double(attempt) * 0.5 // 0.5s, 1s, 1.5s
-                    print("⏱️ Waiting \(delay)s before retry...")
-                    try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-                }
-            }
-        }
-        
-        // All attempts failed, try a fallback solution
-        print("🔄 Trying fallback solution after \(maxRetries) failed attempts...")
-        
-        // Try alternate endpoint format (without /admin/)
-        let fallbackUrlString = "https://qskipper.com/api/get_product_photo/\(photoId)"
-        
-        guard let fallbackUrl = URL(string: fallbackUrlString) else {
-            print("❌ Failed to create fallback URL")
-            throw lastError ?? NetworkUtilsError.ImageNotFound
-        }
+        print("📡 NetworkUtils: Delegating fetchProductImage to APIClient for ID: \(photoId)")
         
         do {
-            print("📡 Trying fallback URL: \(fallbackUrlString)")
-            let (data, response) = try await URLSession.shared.data(from: fallbackUrl)
+            let urlString = "\(baseURl.absoluteString)get_product_photo/\(photoId)"
+            let image = try await APIClient.shared.loadImage(from: urlString)
             
-            guard let httpResponse = response as? HTTPURLResponse else {
-                print("❌ Invalid HTTP response from fallback URL")
-                throw NetworkUtilsError.NetworkError
-            }
-            
-            if httpResponse.statusCode != 200 {
-                print("❌ HTTP Error from fallback URL: \(httpResponse.statusCode)")
-                throw NetworkUtilsError.ImageNotFound
-            }
-            
-            guard let image = UIImage(data: data) else {
-                print("❌ Could not create image from fallback data")
-                throw NetworkUtilsError.ImageNotFound
-            }
-            
-            // Cache the loaded image
+            // Cache the image to maintain compatibility with old code
             ImageCache.shared.setImage(image, forKey: "product_\(photoId)")
             
-            print("✅ Successfully loaded product image from fallback URL")
             return image
-            
         } catch {
-            print("❌ Failed to load product image (including fallback): \(error)")
+            print("❌ Fetch product image error: \(error.localizedDescription)")
             
-            // Return a placeholder image instead of throwing an error
-            if let placeholderImage = UIImage(systemName: "photo.fill") {
-                print("⚠️ Using system placeholder image")
-                return placeholderImage
-            }
-            
-            // If even the system placeholder fails, create a simple colored image
+            // Try an alternative source - create a placeholder image with product ID 
+            // that's consistent for the same product
             let renderer = UIGraphicsImageRenderer(size: CGSize(width: 100, height: 100))
             let placeholderImage = renderer.image { ctx in
-                UIColor.systemGray4.setFill()
+                // Background color - derive from photoId hash for consistency
+                let hash = abs(photoId.hash)
+                let red = CGFloat((hash & 0xFF0000) >> 16) / 255.0
+                let green = CGFloat((hash & 0x00FF00) >> 8) / 255.0
+                let blue = CGFloat(hash & 0x0000FF) / 255.0
+                
+                let color = UIColor(red: max(0.3, red), green: max(0.3, green), blue: max(0.3, blue), alpha: 1.0)
+                color.setFill()
                 ctx.fill(CGRect(x: 0, y: 0, width: 100, height: 100))
+                
+                // Draw product ID text
+                let idText = String(photoId.suffix(6))
+                let attrs: [NSAttributedString.Key: Any] = [
+                    .font: UIFont.systemFont(ofSize: 14, weight: .bold),
+                    .foregroundColor: UIColor.white
+                ]
+                
+                let textSize = (idText as NSString).size(withAttributes: attrs)
+                let textRect = CGRect(
+                    x: (100 - textSize.width) / 2,
+                    y: (100 - textSize.height) / 2,
+                    width: textSize.width,
+                    height: textSize.height
+                )
+                
+                (idText as NSString).draw(in: textRect, withAttributes: attrs)
             }
             
-            print("⚠️ Using generated placeholder image")
+            // Cache the placeholder
+            ImageCache.shared.setImage(placeholderImage, forKey: "product_\(photoId)")
+            
             return placeholderImage
         }
     }
     
-    // MARK: - Top Picks
+    // MARK: - Top Picks Endpoint
     
     func fetchTopPicks() async throws -> [Product] {
-        // Fix: Use the correct endpoint "top-picks" with hyphen instead of underscore
-        let url = baseURl.appendingPathComponent("top-picks")
-        
-        print("📡 Fetching top picks from: \(url.absoluteString)")
+        print("📡 NetworkUtils: Delegating fetchTopPicks to APIClient")
         
         do {
-            let (data, response) = try await URLSession.shared.data(from: url)
+            return try await APIClient.shared.fetchTopPicks()
+        } catch let error as APIClient.APIError {
+            print("❌ APIClient error: \(error.localizedDescription)")
             
-            guard let httpResponse = response as? HTTPURLResponse else {
-                print("❌ Invalid HTTP response for top picks")
+            // Convert APIClient errors to NetworkUtils errors for backward compatibility
+            switch error {
+            case .decodingFailed:
+                throw NetworkUtilsError.JSONParsingError
+            default:
                 throw NetworkUtilsError.NetworkError
             }
+        } catch {
+            print("❌ Unexpected error: \(error.localizedDescription)")
+            throw NetworkUtilsError.NetworkError
+        }
+    }
+    
+    // MARK: - Auth Endpoints
+    
+    func registerUser(registrationData: [String: Any]) async throws -> Bool {
+        print("📡 NetworkUtils: Delegating registerUser to APIClient")
+        
+        do {
+            // Convert registrationData to JSON
+            let jsonData = try JSONSerialization.data(withJSONObject: registrationData)
             
-            if httpResponse.statusCode != 200 {
-                print("❌ HTTP Error for top picks: \(httpResponse.statusCode)")
-                throw NetworkUtilsError.NetworkError
+            // Send register request
+            let data = try await APIClient.shared.request(
+                path: "/register",
+                method: "POST",
+                body: jsonData,
+                headers: ["Content-Type": "application/json"]
+            )
+            
+            // Parse response (use same logic as original method)
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let success = json["success"] as? Bool, success {
+                return true
             }
             
-            // Print the response for debugging
-            if let responseString = String(data: data, encoding: .utf8) {
-                print("📄 Top picks response: \(responseString)")
+            throw NetworkUtilsError.RegistrationFailed
+        } catch {
+            print("❌ API error during registration: \(error.localizedDescription)")
+            throw NetworkUtilsError.RegistrationFailed
+        }
+    }
+    
+    func verifyOTP(otpData: [String: Any]) async throws -> Bool {
+        print("📡 NetworkUtils: Delegating verifyOTP to APIClient")
+        
+        do {
+            // Convert otpData to JSON
+            let jsonData = try JSONSerialization.data(withJSONObject: otpData)
+            
+            // Send OTP verification request
+            let data = try await APIClient.shared.request(
+                path: "/verify_otp",
+                method: "POST",
+                body: jsonData,
+                headers: ["Content-Type": "application/json"]
+            )
+            
+            // Parse response (use same logic as original method)
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let success = json["success"] as? Bool, success {
+                return true
             }
+            
+            throw NetworkUtilsError.OTPVerificationFailed
+        } catch {
+            print("❌ API error during OTP verification: \(error.localizedDescription)")
+            throw NetworkUtilsError.OTPVerificationFailed
+        }
+    }
+    
+    // MARK: - Order Endpoints
+    
+    func placeOrder(orderData: [String: Any]) async throws -> String {
+        print("📡 NetworkUtils: Delegating placeOrder to APIClient")
+        
+        // Determine if this is a scheduled order
+        let isScheduledOrder = orderData["scheduleDate"] != nil
+        print("📅 Order type: \(isScheduledOrder ? "Scheduled" : "Immediate")")
+        
+        if isScheduledOrder {
+            print("📅 Scheduled date: \(String(describing: orderData["scheduleDate"]))")
+            // For scheduled orders, always set takeAway to true as required by server
+            var mutableOrderData = orderData
+            mutableOrderData["takeAway"] = true
+            print("📝 NetworkUtils: Setting takeAway to true for scheduled order")
             
             do {
-                // Try to decode with the TopPicksResponse model that handles multiple formats
-                let decoder = JSONDecoder()
-                let topPicksResponse = try decoder.decode(TopPicksResponse.self, from: data)
-                
-                if !topPicksResponse.allTopPicks.isEmpty {
-                    print("✅ Successfully decoded \(topPicksResponse.allTopPicks.count) top picks using TopPicksResponse")
-                    return topPicksResponse.allTopPicks
-                }
-                
-                // If TopPicksResponse failed to find items, try alternative approaches
-                
-                // Try decoding as an array of products directly
-                if let products = try? decoder.decode([Product].self, from: data) {
-                    print("✅ Successfully decoded \(products.count) top picks as direct array")
-                    return products
-                }
-                
-                // If that fails, try decoding with a wrapper object
-                if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                    // Try various possible keys
-                    let possibleKeys = ["top-picks", "topPicks", "top_picks", "allTopPicks", "products", "dishes"]
-                    
-                    for key in possibleKeys {
-                        if let productsArray = json[key] as? [[String: Any]] {
-                            print("✅ Found top picks array using key: \(key)")
-                            
-                            // Convert back to data
-                            let productsData = try JSONSerialization.data(withJSONObject: productsArray)
-                            
-                            // Decode array of products
-                            let products = try decoder.decode([Product].self, from: productsData)
-                            print("✅ Successfully decoded \(products.count) top picks using key: \(key)")
-                            return products
-                        }
+                return try await APIClient.shared.placeOrder(orderData: mutableOrderData)
+            } catch let error as APIClient.APIError {
+                if case .serverError(let code, let data) = error {
+                    // Try to extract error message from response
+                    var errorMessage = "Server returned error \(code)"
+                    if let data = data, 
+                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                       let message = json["message"] as? String {
+                        errorMessage = message
                     }
+                    print("❌ Scheduled order error: \(errorMessage)")
+                    throw NetworkUtilsError.ScheduledOrderFailed(errorMessage)
                 }
-                
-                // If all attempts fail, log and return empty array
-                print("⚠️ No top picks found in response or unable to parse")
-                return []
-                
-            } catch {
-                print("❌ Failed to decode top picks: \(error)")
-                throw NetworkUtilsError.JSONParsingError
+                throw NetworkUtilsError.ScheduledOrderFailed(error.localizedDescription)
             }
-            
-        } catch {
-            print("❌ Network request for top picks failed: \(error)")
-            throw NetworkUtilsError.NetworkError
         }
-    }
-    
-    // MARK: - User Authentication
-    
-    func registerUser(email: String, name: String, phone: String?) async throws -> String {
-        let url = baseURl.appendingPathComponent("register")
-        
-        var registerData: [String: Any] = [
-            "email": email,
-            "username": name
-        ]
-        
-        if let phone = phone {
-            registerData["phone"] = phone
-        }
-        
-        guard let jsonData = try? JSONSerialization.data(withJSONObject: registerData) else {
-            throw NetworkUtilsError.JSONParsingError
-        }
-        
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = jsonData
         
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
-            
-            guard let httpResponse = response as? HTTPURLResponse else {
-                throw NetworkUtilsError.NetworkError
-            }
-            
-            if httpResponse.statusCode != 200 {
-                throw NetworkUtilsError.RegistrationFailed
-            }
-            
-            do {
-                guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                      let success = json["success"] as? Bool,
-                      success,
-                      let otp = json["otp"] as? String else {
-                    throw NetworkUtilsError.RegistrationFailed
+            return try await APIClient.shared.placeOrder(orderData: orderData)
+        } catch let error as APIClient.APIError {
+            if case .serverError(let code, let data) = error {
+                // Try to extract error message from response
+                var errorMessage = "Server returned error \(code)"
+                if let data = data, 
+                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let message = json["message"] as? String {
+                    errorMessage = message
                 }
+                print("❌ Order error: \(errorMessage)")
                 
-                return otp
-            } catch {
-                throw NetworkUtilsError.JSONParsingError
-            }
-            
-        } catch {
-            throw NetworkUtilsError.NetworkError
-        }
-    }
-    
-    func verifyOTP(email: String, otp: String) async throws -> User {
-        let url = baseURl.appendingPathComponent("verify_otp")
-        
-        let verificationData: [String: Any] = [
-            "email": email,
-            "otp": otp
-        ]
-        
-        guard let jsonData = try? JSONSerialization.data(withJSONObject: verificationData) else {
-            throw NetworkUtilsError.JSONParsingError
-        }
-        
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = jsonData
-        
-        do {
-            let (data, response) = try await URLSession.shared.data(for: request)
-            
-            guard let httpResponse = response as? HTTPURLResponse else {
-                throw NetworkUtilsError.NetworkError
-            }
-            
-            if httpResponse.statusCode != 200 {
-                throw NetworkUtilsError.OTPVerificationFailed
-            }
-            
-            do {
-                let decoder = JSONDecoder()
-                decoder.keyDecodingStrategy = .convertFromSnakeCase
-                
-                let authResponse = try decoder.decode(AuthResponse.self, from: data)
-                
-                guard let user = authResponse.user else {
-                    throw NetworkUtilsError.OTPVerificationFailed
-                }
-                
-                return user
-            } catch {
-                throw NetworkUtilsError.JSONParsingError
-            }
-            
-        } catch {
-            throw NetworkUtilsError.NetworkError
-        }
-    }
-    
-    // MARK: - Order Management
-    
-    func submitOrder(orderRequest: PlaceOrderRequest) async throws -> Order {
-        let url = baseURl.appendingPathComponent("order-placed")
-        
-        // Log UserDefaults state
-        print("🔍 Checking UserDefaults state before order submission:")
-        print("   - User ID: \(UserDefaults.standard.string(forKey: "userID") ?? "nil")")
-        print("   - User Email: \(UserDefaults.standard.string(forKey: "user_email") ?? "nil")")
-        print("   - User Name: \(UserDefaults.standard.string(forKey: "user_name") ?? "nil")")
-        print("   - Is Logged In: \(UserDefaults.standard.bool(forKey: "is_logged_in"))")
-        
-        // Log order request details
-        print("📦 Order Request Details:")
-        print("   - User ID: \(orderRequest.userId)")
-        print("   - Restaurant ID: \(orderRequest.restaurantId)")
-        print("   - Total Amount: \(orderRequest.totalAmount)")
-        print("   - Number of Items: \(orderRequest.items.count)")
-        print("   - Order Type: \(orderRequest.orderType)")
-        if let scheduledTime = orderRequest.scheduledTime {
-            print("   - Scheduled Time: \(scheduledTime)")
-        }
-        
-        // Ensure `restaurantId` is present
-        guard !orderRequest.restaurantId.isEmpty else {
-            print("❌ Error: Restaurant ID is missing from order")
-            throw NSError(domain: "QueueSkipper", code: 400, userInfo: [
-                NSLocalizedDescriptionKey: "❌ Error: Restaurant ID is missing from order"
-            ])
-        }
-        
-        // Convert the order request to dictionary
-        let encoder = JSONEncoder()
-        encoder.keyEncodingStrategy = .convertToSnakeCase
-        let orderData = try encoder.encode(orderRequest)
-        
-        // Log the JSON payload
-        if let jsonString = String(data: orderData, encoding: .utf8) {
-            print("📤 JSON Payload:")
-            print(jsonString)
-        }
-        
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = orderData
-        
-        do {
-            print("🌐 Sending order request to: \(url.absoluteString)")
-            let (data, response) = try await URLSession.shared.data(for: request)
-            
-            // Log response details
-            guard let httpResponse = response as? HTTPURLResponse else {
-                print("❌ Error: Invalid HTTP response")
-                throw NetworkUtilsError.NetworkError
-            }
-            
-            print("📥 Response Status Code: \(httpResponse.statusCode)")
-            print("📥 Response Headers:")
-            httpResponse.allHeaderFields.forEach { key, value in
-                print("   \(key): \(value)")
-            }
-            
-            // Convert response data to string for debugging
-            if let responseString = String(data: data, encoding: .utf8) {
-                print("📥 Response Data:")
-                print(responseString)
-            }
-            
-            // Check for success (Status Code: 200)
-            guard httpResponse.statusCode == 200 else {
-                print("❌ Error: Unexpected status code: \(httpResponse.statusCode)")
-                throw NSError(domain: "QueueSkipper", code: httpResponse.statusCode, userInfo: [
-                    NSLocalizedDescriptionKey: "Unexpected status code: \(httpResponse.statusCode)"
-                ])
-            }
-            
-            do {
-                let decoder = JSONDecoder()
-                decoder.keyDecodingStrategy = .convertFromSnakeCase
-                
-                let orderResponse = try decoder.decode(OrderResponse.self, from: data)
-                
-                guard let order = orderResponse.order else {
-                    print("❌ Error: Order data is missing from response")
+                if isScheduledOrder {
+                    throw NetworkUtilsError.ScheduledOrderFailed(errorMessage)
+                } else {
                     throw NetworkUtilsError.OrderFailed
                 }
-                
-                print("✅ Order placed successfully!")
-                print("   - Order ID: \(order.id)")
-                print("   - Status: \(order.status)")
-                print("   - Total Amount: \(order.totalAmount)")
-                
-                return order
-            } catch {
-                print("❌ Error decoding order response: \(error)")
-                throw NetworkUtilsError.JSONParsingError
             }
             
+            if isScheduledOrder {
+                throw NetworkUtilsError.ScheduledOrderFailed(error.localizedDescription)
+            } else {
+                throw NetworkUtilsError.OrderFailed
+            }
         } catch {
-            print("❌ Network error: \(error)")
-            throw NetworkUtilsError.NetworkError
+            print("❌ API error during order placement: \(error.localizedDescription)")
+            
+            if isScheduledOrder {
+                throw NetworkUtilsError.ScheduledOrderFailed(error.localizedDescription)
+            } else {
+                throw NetworkUtilsError.OrderFailed
+            }
+        }
+    }
+    
+    // MARK: - Order Verification
+    
+    func verifyOrder(orderId: String) async throws -> Bool {
+        print("📡 NetworkUtils: Delegating verifyOrder to APIClient")
+        
+        do {
+            // Use the improved verifyOrder method in APIClient
+            _ = try await APIClient.shared.verifyOrder(orderId: orderId)
+            print("✅ NetworkUtils: Order verification successful")
+            return true
+        } catch {
+            print("❌ NetworkUtils: Order verification failed: \(error.localizedDescription)")
+            throw NetworkUtilsError.OrderFailed
         }
     }
 }
@@ -1111,7 +553,7 @@ enum NetworkError: Error {
     }
 }
 
-struct APIEndpoints {
+struct NetworkUtilsEndpoints {
     static let baseURL = "https://qskipperbackend.onrender.com"
     static let verifyOrder = "\(baseURL)/verify-order"
     
@@ -1149,6 +591,9 @@ struct APIEndpoints {
     static func getUserOrders(uid: String) -> String {
         return baseURL + "/get-UserOrder/\(uid)"
     }
+    
+    // Railway server URL for backup and high-throughput endpoints
+    static let railwayBaseURL = "https://qskipperserver-production.up.railway.app"
 }
 
 class NetworkManager {
@@ -1442,11 +887,11 @@ class NetworkManager {
 // Helper for creating image URLs
 extension NetworkUtils {
     static func getImageUrl(id: Int) -> URL? {
-        return URL(string: "\(APIEndpoints.baseURL)/get_restaurant_photo/\(id)")
+        return URL(string: "\(NetworkUtilsEndpoints.baseURL)/get_restaurant_photo/\(id)")
     }
     
     static func getProductImageUrl(id: Int) -> URL? {
-        return URL(string: "\(APIEndpoints.baseURL)/get_product_photo/\(id)")
+        return URL(string: "\(NetworkUtilsEndpoints.baseURL)/get_product_photo/\(id)")
     }
     
     // Add more flexible methods that can handle both String and Int photoIds
@@ -1454,14 +899,14 @@ extension NetworkUtils {
         if let id = Int(photoId) {
             return getImageUrl(id: id)
         }
-        return URL(string: "\(APIEndpoints.baseURL)/get_restaurant_photo/\(photoId)")
+        return URL(string: "\(NetworkUtilsEndpoints.baseURL)/get_restaurant_photo/\(photoId)")
     }
     
     static func getProductImageUrl(photoId: String) -> URL? {
         if let id = Int(photoId) {
             return getProductImageUrl(id: id)
         }
-        return URL(string: "\(APIEndpoints.baseURL)/get_product_photo/\(photoId)")
+        return URL(string: "\(NetworkUtilsEndpoints.baseURL)/get_product_photo/\(photoId)")
     }
     
     // Parse API responses to get detailed error messages

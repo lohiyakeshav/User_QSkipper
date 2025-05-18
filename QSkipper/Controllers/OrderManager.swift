@@ -104,7 +104,7 @@ class OrderManager: ObservableObject {
         }
         
         // Always run the debug validation
-        let isValid = debugProductValidation(processedProduct)
+        _ = debugProductValidation(processedProduct)
         
         // Validation checks - log each specific issue
         var validationErrors: [String] = []
@@ -352,7 +352,7 @@ class OrderManager: ObservableObject {
         
         do {
             let response: OrderStatusResponse = try await networkManager.makeRequest(
-                url: APIEndpoints.getOrderStatus(oid: orderId)
+                url: APIEndpoints.getOrderStatus(orderId)
             )
             
             if response.status == "success", let orderStatus = response.orderStatus {
@@ -390,7 +390,7 @@ class OrderManager: ObservableObject {
         
         do {
             let response: OrdersResponse = try await networkManager.makeRequest(
-                url: APIEndpoints.getUserOrders(uid: userId)
+                url: APIEndpoints.getUserOrders(userId)
             )
             
             if response.status == "success", let orders = response.orders {

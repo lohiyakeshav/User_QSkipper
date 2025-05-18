@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import Foundation
 
 struct UserOrdersView: View {
     @StateObject private var viewModel = UserOrdersViewModel()
@@ -67,7 +68,9 @@ struct UserOrdersView: View {
                         ProgressView("Loading orders...")
                         Spacer()
                     } else if viewModel.orders.isEmpty {
-                        EmptyOrdersView()
+                        EmptyOrdersView(onRetry: {
+                            viewModel.fetchOrders()
+                        }, lastRefreshTime: viewModel.lastRefreshTime)
                     } else {
                         ScrollView {
                             LazyVStack(spacing: 16) {
@@ -109,11 +112,72 @@ struct UserOrdersView: View {
                     viewModel.fetchOrders()
                 }
             }
+            .overlay(
+                Group {
+                    if let errorMessage = viewModel.errorMessage {
+                        VStack {
+                            Spacer()
+                            
+                            HStack {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundColor(.yellow)
+                                
+                                Text(errorMessage)
+                                    .font(.system(size: 14))
+                                    .foregroundColor(.white)
+                                
+                                Spacer()
+                                
+                                Button {
+                                    viewModel.errorMessage = nil
+                                } label: {
+                                    Image(systemName: "xmark")
+                                        .foregroundColor(.white)
+                                }
+                            }
+                            .padding()
+                            .background(Color.black.opacity(0.8))
+                            .cornerRadius(8)
+                            .padding()
+                        }
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                        .animation(.easeInOut, value: viewModel.errorMessage != nil)
+                    }
+                }
+            )
+            .overlay(
+                Group {
+                    if viewModel.isLoadingRestaurantData && !viewModel.isLoading {
+                        VStack {
+                            Spacer()
+                            
+                            HStack {
+                                ProgressView()
+                                    .scaleEffect(0.8)
+                                    .tint(.white)
+                                
+                                Text("Loading restaurant information...")
+                                    .font(.system(size: 14))
+                                    .foregroundColor(.white)
+                                
+                                Spacer()
+                            }
+                            .padding()
+                            .background(Color.gray.opacity(0.8))
+                            .cornerRadius(8)
+                            .padding()
+                        }
+                    }
+                }
+            )
         }
     }
 }
 
 struct EmptyOrdersView: View {
+    var onRetry: (() -> Void)? = nil
+    var lastRefreshTime: Date? = nil
+    
     var body: some View {
         VStack(spacing: 20) {
             Spacer()
@@ -131,9 +195,43 @@ struct EmptyOrdersView: View {
                 .foregroundColor(AppColors.mediumGray)
                 .multilineTextAlignment(.center)
             
+            // Last updated timestamp removed
+            
+            if let retry = onRetry {
+                Button(action: retry) {
+                    HStack {
+                        Image(systemName: "arrow.clockwise")
+                        Text("Try Again")
+                    }
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 12)
+                    .background(AppColors.primaryGreen)
+                    .cornerRadius(8)
+                }
+                .padding(.top, 10)
+            }
+            
             Spacer()
         }
         .padding()
+    }
+    
+    // Convert date to "3 minutes ago" format
+    private func timeAgoString(from date: Date) -> String {
+        let now = Date()
+        let components = Calendar.current.dateComponents([.second, .minute, .hour, .day], from: date, to: now)
+        
+        if let day = components.day, day > 0 {
+            return "\(day) day\(day == 1 ? "" : "s") ago"
+        } else if let hour = components.hour, hour > 0 {
+            return "\(hour) hour\(hour == 1 ? "" : "s") ago"
+        } else if let minute = components.minute, minute > 0 {
+            return "\(minute) minute\(minute == 1 ? "" : "s") ago"
+        } else {
+            return "just now"
+        }
     }
 }
 
@@ -276,12 +374,12 @@ struct OrderCard: View {
                             Button {
                                 // No action - just a status indicator
                             } label: {
-                                Text("Currently not delivering")
+                                Text(order.scheduleDate != nil ? "Scheduled" : "")
                                     .font(.system(size: 12))
                                     .foregroundColor(.gray)
                                     .padding(.horizontal, 10)
                                     .padding(.vertical, 6)
-                                    .background(Color.gray.opacity(0.2))
+                                    .background(order.scheduleDate != nil ? AppColors.primaryGreen.opacity(0.1) : Color.gray.opacity(0.2))
                                     .cornerRadius(16)
                             }
                             .disabled(true)
@@ -416,8 +514,8 @@ struct OrderCard: View {
             return "Preparing"
         case "placed":
             return "Placed"
-        case "schduled":
-            return "Schduled"
+        case "schedule":
+            return "Scheduled"
         case "ready", "ready_for_pickup":
             return "Ready for pickup"
         case "completed":
@@ -530,372 +628,6 @@ struct UserOrder: Identifiable {
     var restaurantName: String
     var restaurantLocation: String
     let rating: Int?
-}
-
-// MARK: - ViewModel
-class UserOrdersViewModel: ObservableObject {
-    @Published var orders: [UserOrder] = []
-    @Published var isLoading = false
-    @Published var restaurantDetails: [String: Restaurant] = [:]
-    @Published var allRestaurants: [Restaurant] = []
-    
-    func fetchOrders() {
-        isLoading = true
-        
-        guard let userId = AuthManager.shared.getCurrentUserId() else {
-            print("🚫 No user ID found")
-            isLoading = false
-            return
-        }
-        
-        // Fetch all restaurants first to ensure we have restaurant data
-        Task {
-            await fetchAllRestaurants()
-        }
-        
-        let urlString = "https://qskipperbackend.onrender.com/get-UserOrder/\(userId)"
-        
-        guard let url = URL(string: urlString) else {
-            print("🚫 Invalid URL")
-            isLoading = false
-            return
-        }
-        
-        print("📤 Fetching orders for user: \(userId)")
-        
-        URLSession.shared.dataTask(with: url) { [weak self] data, response, error in
-            DispatchQueue.main.async {
-                guard let self = self else { return }
-                
-                if let error = error {
-                    print("❌ Error fetching orders: \(error)")
-                    self.isLoading = false
-                    return
-                }
-                
-                guard let data = data else {
-                    print("❌ No data received")
-                    self.isLoading = false
-                    return
-                }
-                
-                do {
-                    // Parse the array directly since response is an array at the top level
-                    let orderResponses = try JSONDecoder().decode([OrderResponseDTO].self, from: data)
-                    print("✅ Successfully parsed \(orderResponses.count) orders")
-                    
-                    // First, fetch all restaurant details
-                    let restaurantIds = Set(orderResponses.map { $0.resturant })
-                    let group = DispatchGroup()
-                    
-                    for restaurantId in restaurantIds {
-                        group.enter()
-                        self.fetchRestaurantDetails(for: restaurantId) { _ in
-                            group.leave()
-                        }
-                    }
-                    
-                    // When all restaurant details are loaded, then create the orders
-                    group.notify(queue: .main) {
-                        // Map from DTOs to domain models with restaurant names
-                        self.orders = orderResponses.map { dto in
-                            let restaurantId = dto.resturant
-                            
-                            // Try multiple sources for restaurant details, with better logging
-                            var restaurant: Restaurant? = self.allRestaurants.first(where: { $0.id == restaurantId })
-                            if restaurant == nil {
-                                restaurant = self.restaurantDetails[restaurantId]
-                            }
-                            
-                            let restaurantName = restaurant?.name ?? "Restaurant"
-                            let location = restaurant?.location ?? "Location unavailable"
-                            
-                            print("🔄 Mapping order for restaurant: \(restaurantName) (ID: \(restaurantId))")
-                            
-                            // Create order items
-                            let items = dto.items.map { item in
-                                UserOrderItem(
-                                    id: item._id,
-                                    productId: item.productId,
-                                    name: item.name,
-                                    quantity: item.quantity,
-                                    price: item.price
-                                )
-                            }
-                            
-                            // Parse dates using our flexible helper method
-                            let orderTime = self.parseISO8601Date(from: dto.Time) ?? Date()
-                            
-                            var scheduleDate: Date? = nil
-                            if let scheduleDateString = dto.scheduleDate {
-                                print("📅 Found scheduled date string: \(scheduleDateString)")
-                                scheduleDate = self.parseISO8601Date(from: scheduleDateString)
-                                if let parsedDate = scheduleDate {
-                                    print("✅ Successfully parsed scheduled date: \(parsedDate)")
-                                } else {
-                                    print("❌ Failed to parse scheduled date from: \(scheduleDateString)")
-                                }
-                            }
-                            
-                            // Special handling for known order with schedule date
-                            if dto._id == "67ed822ec992409f659f920b" && scheduleDate == nil {
-                                print("⚠️ Known scheduled order detected but failed to parse date")
-                                print("📋 Order details: \(dto)")
-                                // Force create a scheduled date for this order
-                                let manualDateFormatter = DateFormatter()
-                                manualDateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'"
-                                manualDateFormatter.timeZone = TimeZone(abbreviation: "UTC")
-                                scheduleDate = manualDateFormatter.date(from: "2025-04-03T11:00:00.000Z")
-                                print("🔧 Manually set schedule date: \(String(describing: scheduleDate))")
-                            }
-                            
-                            // We'll query for rating in a real app, using nil for now
-                            return UserOrder(
-                                id: dto._id,
-                                restaurantId: restaurantId,
-                                userID: dto.userID,
-                                items: items,
-                                totalAmount: dto.totalAmount,
-                                status: dto.status,
-                                cookTime: dto.cookTime,
-                                takeAway: dto.takeAway,
-                                time: orderTime,
-                                scheduleDate: scheduleDate,
-                                restaurantName: restaurantName,
-                                restaurantLocation: location,
-                                rating: nil // No mock rating, should come from real API
-                            )
-                        }
-                        
-                        self.isLoading = false
-                    }
-                } catch {
-                    print("❌ Error decoding orders: \(error)")
-                    self.isLoading = false
-                }
-            }
-        }.resume()
-    }
-    
-    func fetchAllRestaurants() async {
-        do {
-            print("📡 Fetching all restaurants for mapping to orders")
-            let fetchedRestaurants = try await NetworkUtils.shared.fetchRestaurants()
-            
-            DispatchQueue.main.async {
-                self.allRestaurants = fetchedRestaurants
-                print("✅ Successfully fetched \(fetchedRestaurants.count) restaurants")
-                
-                // Store in dictionary for faster lookups
-                for restaurant in fetchedRestaurants {
-                    self.restaurantDetails[restaurant.id] = restaurant
-                }
-                
-                // Update restaurant names for existing orders
-                self.updateRestaurantNames()
-            }
-        } catch {
-            print("❌ Error fetching all restaurants: \(error)")
-        }
-    }
-    
-    func updateRestaurantNames() {
-        print("🔄 Updating restaurant names for \(orders.count) orders with \(allRestaurants.count) available restaurants")
-        
-        for i in 0..<orders.count {
-            let restaurantId = orders[i].restaurantId
-            
-            // Try to find the restaurant in our list or dictionary
-            if let restaurant = allRestaurants.first(where: { $0.id == restaurantId }) ?? restaurantDetails[restaurantId] {
-                var updatedOrder = orders[i]
-                updatedOrder.restaurantName = restaurant.name
-                updatedOrder.restaurantLocation = restaurant.location ?? "Unknown location"
-                orders[i] = updatedOrder
-                
-                print("✅ Updated order #\(i+1) restaurant name: \(restaurant.name) (ID: \(restaurantId))")
-            } else {
-                print("⚠️ No restaurant found for ID: \(restaurantId) in order #\(i+1)")
-                
-                // Even if not found, update with what we have from the API response
-                if orders[i].restaurantName == "Restaurant" || orders[i].restaurantLocation == "Location unavailable" {
-                    Task {
-                        do {
-                            let fetchedRestaurant = try await NetworkUtils.shared.fetchRestaurant(with: restaurantId)
-                            DispatchQueue.main.async {
-                                var updatedOrder = self.orders[i]
-                                updatedOrder.restaurantName = fetchedRestaurant.name
-                                updatedOrder.restaurantLocation = fetchedRestaurant.location ?? "Unknown location"
-                                self.orders[i] = updatedOrder
-                                self.restaurantDetails[restaurantId] = fetchedRestaurant
-                                
-                                print("✅ Fetched missing restaurant: \(fetchedRestaurant.name) for order #\(i+1)")
-                            }
-                        } catch {
-                            print("❌ Failed to fetch missing restaurant with ID: \(restaurantId)")
-                        }
-                    }
-                }
-            }
-        }
-    }
-    
-    func fetchRestaurantDetails(for restaurantId: String, completion: @escaping (Restaurant?) -> Void) {
-        let urlString = "https://qskipperbackend.onrender.com/get_Restaurant/\(restaurantId)"
-        
-        guard let url = URL(string: urlString) else {
-            completion(nil)
-            return
-        }
-        
-        URLSession.shared.dataTask(with: url) { [weak self] data, response, error in
-            guard let self = self, let data = data, error == nil else {
-                DispatchQueue.main.async {
-                    completion(nil)
-                }
-                return
-            }
-            
-            do {
-                if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                   let restaurantData = json["restaurant"] as? [String: Any] {
-                    
-                    // Extract restaurant details
-                    let name = restaurantData["name"] as? String ?? "Unknown Restaurant"
-                    let location = restaurantData["location"] as? String ?? "Unknown Location"
-                    let photoId = restaurantData["photoId"] as? String
-                    let rating = (restaurantData["rating"] as? NSNumber)?.doubleValue ?? 4.0
-                    let cuisine = restaurantData["cuisine"] as? String
-                    let estimatedTime = restaurantData["estimatedTime"] as? String
-                    
-                    let restaurant = Restaurant(
-                        id: restaurantId,
-                        name: name,
-                        estimatedTime: estimatedTime,
-                        cuisine: cuisine,
-                        photoId: photoId,
-                        rating: rating,
-                        location: location
-                    )
-                    
-                    DispatchQueue.main.async {
-                        self.restaurantDetails[restaurantId] = restaurant
-                        
-                        // Log successful restaurant retrieval
-                        print("✅ Fetched restaurant: \(name) (ID: \(restaurantId))")
-                        
-                        // Update any existing orders with this restaurant ID
-                        for i in 0..<self.orders.count {
-                            if self.orders[i].restaurantId == restaurantId {
-                                var updatedOrder = self.orders[i]
-                                updatedOrder.restaurantName = name
-                                updatedOrder.restaurantLocation = location
-                                self.orders[i] = updatedOrder
-                                
-                                print("✅ Updated order with restaurant name: \(name)")
-                            }
-                        }
-                        
-                        completion(restaurant)
-                    }
-                } else {
-                    print("❌ Failed to extract restaurant data from JSON for ID: \(restaurantId)")
-                    DispatchQueue.main.async {
-                        completion(nil)
-                    }
-                }
-            } catch {
-                print("Error parsing restaurant JSON: \(error)")
-                DispatchQueue.main.async {
-                    completion(nil)
-                }
-            }
-        }.resume()
-    }
-    
-    // Helper method to parse ISO8601 date strings with more flexibility
-    private func parseISO8601Date(from dateString: String) -> Date? {
-        print("🕒 Attempting to parse date: \(dateString)")
-        
-        // Try standard ISO8601 formatter first
-        let iso8601Formatter = ISO8601DateFormatter()
-        iso8601Formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = iso8601Formatter.date(from: dateString) {
-            print("✅ Parsed date with ISO8601DateFormatter: \(date)")
-            return date
-        }
-        
-        // Try different DateFormatter patterns if ISO8601 fails
-        let dateFormatter = DateFormatter()
-        dateFormatter.locale = Locale(identifier: "en_US_POSIX")
-        dateFormatter.timeZone = TimeZone(abbreviation: "UTC")
-        
-        // Common ISO8601 formats
-        let formats = [
-            "yyyy-MM-dd'T'HH:mm:ss.SSSZ",
-            "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
-            "yyyy-MM-dd'T'HH:mm:ssZ",
-            "yyyy-MM-dd'T'HH:mm:ss'Z'",
-            "yyyy-MM-dd'T'HH:mm:ss.SSSZZZZZ"
-        ]
-        
-        for format in formats {
-            dateFormatter.dateFormat = format
-            if let date = dateFormatter.date(from: dateString) {
-                print("✅ Parsed date with format \(format): \(date)")
-                return date
-            }
-        }
-        
-        print("❌ Failed to parse date with any format: \(dateString)")
-        return nil
-    }
-    
-    func filteredOrders(searchText: String) -> [UserOrder] {
-        if searchText.isEmpty {
-            return orders
-        }
-        
-        let lowercasedQuery = searchText.lowercased()
-        
-        return orders.filter { order in
-            // Check if restaurant name contains the search query
-            if order.restaurantName.lowercased().contains(lowercasedQuery) {
-                return true
-            }
-            
-            // Check if any item name contains the search query
-            for item in order.items {
-                if item.name.lowercased().contains(lowercasedQuery) {
-                    return true
-                }
-            }
-            
-            return false
-        }
-    }
-}
-
-// Data Transfer Objects that match the API response structure
-struct OrderItemDTO: Codable {
-    let productId: String
-    let name: String
-    let quantity: Int
-    let price: Double
-    let _id: String
-}
-
-struct OrderResponseDTO: Codable {
-    let _id: String
-    let resturant: String
-    let userID: String
-    let items: [OrderItemDTO]
-    let totalAmount: String
-    let status: String
-    let cookTime: Int
-    let takeAway: Bool
-    let Time: String
-    let scheduleDate: String?
-    let __v: Int
 }
 
 #Preview {

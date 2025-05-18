@@ -14,6 +14,7 @@ class CartViewController: ObservableObject, RazorpayPaymentCompletionProtocol {
     }
     @Published var isProcessing = false
     @Published var showOrderSuccess = false
+    @Published var showOrderFail = false
     @Published var showPaymentView = false
     @Published var isSchedulingOrder = false
     @Published var scheduledDate = Date().addingTimeInterval(3600)
@@ -27,14 +28,17 @@ class CartViewController: ObservableObject, RazorpayPaymentCompletionProtocol {
     
     init(orderManager: OrderManager = OrderManager.shared) {
         self.orderManager = orderManager
-        self.loadRestaurantDetails()
-        // Initialize Razorpay on the main thread
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
+        
+        // First set up non-UI properties
+        NotificationCenter.default.addObserver(self, selector: #selector(cartDidChange), name: NSNotification.Name("CartDidChange"), object: nil)
+        
+        // Then initialize UI properties
+        ThreadUtility.ensureMainThread { [self] in
+            self.loadRestaurantDetails()
+            // Initialize Razorpay on the main thread
             self.razorpay = RazorpayCheckout.initWithKey("rzp_test_UrdIK5FKWhLES5", andDelegate: self)
             print("✅ Razorpay initialized with key: rzp_test_UrdIK5FKWhLES5, delegate: \(String(describing: self))")
         }
-        NotificationCenter.default.addObserver(self, selector: #selector(cartDidChange), name: NSNotification.Name("CartDidChange"), object: nil)
     }
     
     deinit {
@@ -161,13 +165,21 @@ class CartViewController: ObservableObject, RazorpayPaymentCompletionProtocol {
     
     private func submitOrderToAPI(orderRequest: PlaceOrderRequest) async throws {
         let priceString = String(format: "%.0f", getTotalAmount())
-        let apiEndpoint = isSchedulingOrder ? APIEndpoints.scheduleOrderPlaced : APIEndpoints.orderPlaced
+        let apiEndpoint = isSchedulingOrder ? "/schedule-order-placed" : "/order-placed"
         
         print("📤 CartViewController: Submitting order to \(isSchedulingOrder ? "schedule-order-placed" : "order-placed") API")
         
-        // Only set takeAway to true when packMyOrder is explicitly selected
-        // Don't take order type into account anymore
-        let takeAway = packMyOrder
+        // Set takeAway value based on conditions
+        let takeAway: Bool
+        if isSchedulingOrder {
+            // Backend requires scheduled orders to have takeAway=true
+            takeAway = true
+            print("📝 CartViewController: Setting takeAway to true for scheduled orders (backend requirement)")
+        } else {
+            // For regular orders, use the packMyOrder value
+            takeAway = packMyOrder
+            print("📝 CartViewController: Setting takeAway to: \(takeAway) (type: Bool)")
+        }
         
         var jsonDict: [String: Any] = [
             "restaurantId": orderRequest.restaurantId,
@@ -222,35 +234,41 @@ class CartViewController: ObservableObject, RazorpayPaymentCompletionProtocol {
     }
     
     func initiateRazorpayPayment(orderId: String, amount: Double) {
-        guard let razorpay = razorpay else {
-            print("❌ CartViewController: Razorpay not initialized")
-            DispatchQueue.main.async {
-                self.showPaymentView = false
-                self.isProcessing = false
-            }
-            return
-        }
-        
-        let amountInPaise = Int(amount * 100)
-        let options: [String: Any] = [
-            "amount": amountInPaise,
-            "currency": "INR",
-            "order_id": orderId,
-            "name": restaurant?.name ?? "QSkipper",
-            "description": "Order #\(orderId)",
-            "prefill": [
-                "contact": UserDefaultsManager.shared.getUserPhone() ?? "",
-                "email": UserDefaultsManager.shared.getUserEmail() ?? ""
-            ],
-            "theme": [
-                "color": "#F37254"
-            ]
-        ]
-        
         print("✅ Entering initiateRazorpayPayment with orderId: \(orderId)")
-        print("📤 CartViewController: Initiating Razorpay payment with options: \(options)")
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
+        
+        ThreadUtility.ensureMainThread { [weak self] in
+            guard let self = self, let razorpay = self.razorpay else {
+                print("❌ CartViewController: Razorpay not initialized")
+                self?.showPaymentView = false
+                self?.isProcessing = false
+                
+                // Show payment failed view if Razorpay can't initialize
+                self?.showOrderFail = true
+                return
+            }
+            
+            let amountInPaise = Int(amount * 100)
+            let options: [String: Any] = [
+                "amount": amountInPaise,
+                "currency": "INR",
+                "order_id": orderId,
+                "name": self.restaurant?.name ?? "QSkipper",
+                "description": "Order #\(orderId)",
+                "prefill": [
+                    "contact": UserDefaultsManager.shared.getUserPhone() ?? "",
+                    "email": UserDefaultsManager.shared.getUserEmail() ?? ""
+                ],
+                "theme": [
+                    "color": "#F37254"
+                ],
+                // Handle cancellation by setting these options
+                "modal": [
+                    "escape": false,
+                    "confirm_close": true
+                ]
+            ]
+            
+            print("📤 CartViewController: Initiating Razorpay payment with options: \(options)")
             razorpay.open(options)
             print("✅ Razorpay payment popup opened")
         }
@@ -264,7 +282,6 @@ class CartViewController: ObservableObject, RazorpayPaymentCompletionProtocol {
         return orderManager.getCartTotal() * (1 + 0.04)
     }
     
-    // MARK: - Razorpay Payment Completion Protocol
     // MARK: - Razorpay Payment Completion Protocol
 
     func onPaymentSuccess(_ paymentId: String, andData data: [String: Any]) {
@@ -281,72 +298,37 @@ class CartViewController: ObservableObject, RazorpayPaymentCompletionProtocol {
                 return
             }
             
-            let jsonDict: [String: Any] = ["order_id": orderId] // Using "order_id" as per Razorpay convention
+            print("📝 CartViewController: Starting order verification for orderId: \(orderId)")
+            
             do {
-                guard let url = URL(string: "\(APIEndpoints.baseURL)/verify-order") else {
-                    print("❌ CartViewController: Invalid URL: \(APIEndpoints.baseURL)/verify-order")
-                    self.showPaymentView = false
-                    self.isProcessing = false
-                    return
-                }
-                
-                var request = URLRequest(url: url)
-                request.httpMethod = "POST"
-                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                
-                do {
-                    let requestData = try JSONSerialization.data(withJSONObject: jsonDict)
-                    request.httpBody = requestData
-                    if let jsonString = String(data: requestData, encoding: .utf8) {
-                        print("📄 CartViewController: Verification request payload: \(jsonString)")
-                    }
-                } catch {
-                    print("❌ CartViewController: Failed to serialize JSON for verification: \(error.localizedDescription)")
-                    self.showPaymentView = false
-                    self.isProcessing = false
-                    return
-                }
-                
-                let (data, response) = try await URLSession.shared.data(for: request)
-                guard let httpResponse = response as? HTTPURLResponse else {
-                    print("❌ CartViewController: No HTTP response received from verifyOrder")
-                    self.showOrderSuccess = true
-                    self.showPaymentView = false
-                    self.isProcessing = false
-                    self.orderManager.clearCart()
-                    return
-                }
-                
-                print("✅ CartViewController: Order verification response received")
-                print("   - Status Code: \(httpResponse.statusCode)")
-                print("   - Headers: \(httpResponse.allHeaderFields)")
-                
-                if let responseBody = String(data: data, encoding: .utf8) {
-                    print("   - Response Body: \(responseBody)")
-                } else {
-                    print("   - Response Body: (empty or non-UTF8 data)")
-                }
-                
-                if httpResponse.statusCode == 200 {
-                    print("✅ CartViewController: Order verification successful")
-                } else {
-                    print("⚠️ CartViewController: Order verification returned non-200 status: \(httpResponse.statusCode)")
-                }
-                
-                // Proceed with success flow regardless of verification result
-                self.showOrderSuccess = true
-                self.showPaymentView = false
-                self.isProcessing = false
-                self.orderManager.clearCart()
-                print("✅ CartViewController: Order confirmed and cart cleared")
+                // Use the APIClient's verifyOrder method which has built-in retries and fallback
+                _ = try await APIClient.shared.verifyOrder(orderId: orderId)
+                print("✅ CartViewController: Order verification successful")
             } catch {
-                print("❌ CartViewController: Order verification failed: \(error.localizedDescription)")
-                // Still proceed with success flow to avoid blocking user
+                print("⚠️ CartViewController: Order verification failed: \(error.localizedDescription)")
+                // Continue with order success despite verification failure
+                // The payment was successful even if verification failed
+            }
+            
+            // Always proceed with success flow 
+            ThreadUtility.ensureMainThread { [weak self] in
+                guard let self = self else { return }
                 self.showOrderSuccess = true
                 self.showPaymentView = false
                 self.isProcessing = false
                 self.orderManager.clearCart()
-                print("✅ CartViewController: Order confirmed and cart cleared despite verification failure")
+                
+                // Dispatch to ensure tab bar has time to update after order success UI appears
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    // Make sure tab bar shows up for navigation
+                    Task { @MainActor in
+                        if let tabBarController = UIApplication.keyWindow?.rootViewController as? UITabBarController {
+                            tabBarController.tabBar.isHidden = false
+                        }
+                    }
+                }
+                
+                print("✅ CartViewController: Order confirmed and cart cleared")
             }
         }
     }
@@ -362,82 +344,101 @@ class CartViewController: ObservableObject, RazorpayPaymentCompletionProtocol {
                 return
             }
             
-            let jsonDict: [String: Any] = ["order_id": orderId] // Using "order_id" as per Razorpay convention
+            print("📝 CartViewController: Starting order verification for orderId: \(orderId) (legacy)")
+            
             do {
-                guard let url = URL(string: "\(APIEndpoints.baseURL)/verify-order") else {
-                    print("❌ CartViewController: Invalid URL: \(APIEndpoints.baseURL)/verify-order")
-                    self.showPaymentView = false
-                    self.isProcessing = false
-                    return
-                }
-                
-                var request = URLRequest(url: url)
-                request.httpMethod = "POST"
-                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                
-                do {
-                    let requestData = try JSONSerialization.data(withJSONObject: jsonDict)
-                    request.httpBody = requestData
-                    if let jsonString = String(data: requestData, encoding: .utf8) {
-                        print("📄 CartViewController: Verification request payload: \(jsonString)")
-                    }
-                } catch {
-                    print("❌ CartViewController: Failed to serialize JSON for verification: \(error.localizedDescription)")
-                    self.showPaymentView = false
-                    self.isProcessing = false
-                    return
-                }
-                
-                let (data, response) = try await URLSession.shared.data(for: request)
-                guard let httpResponse = response as? HTTPURLResponse else {
-                    print("❌ CartViewController: No HTTP response received from verifyOrder (legacy)")
-                    self.showOrderSuccess = true
-                    self.showPaymentView = false
-                    self.isProcessing = false
-                    self.orderManager.clearCart()
-                    return
-                }
-                
-                print("✅ CartViewController: Order verification response received (legacy)")
-                print("   - Status Code: \(httpResponse.statusCode)")
-                print("   - Headers: \(httpResponse.allHeaderFields)")
-                
-                if let responseBody = String(data: data, encoding: .utf8) {
-                    print("   - Response Body: \(responseBody)")
-                } else {
-                    print("   - Response Body: (empty or non-UTF8 data)")
-                }
-                
-                if httpResponse.statusCode == 200 {
-                    print("✅ CartViewController: Order verification successful (legacy)")
-                } else {
-                    print("⚠️ CartViewController: Order verification returned non-200 status (legacy): \(httpResponse.statusCode)")
-                }
-                
-                self.showOrderSuccess = true
-                self.showPaymentView = false
-                self.isProcessing = false
-                self.orderManager.clearCart()
-                print("✅ CartViewController: Order confirmed and cart cleared (legacy callback)")
+                // Use the APIClient's verifyOrder method which has built-in retries and fallback
+                _ = try await APIClient.shared.verifyOrder(orderId: orderId)
+                print("✅ CartViewController: Order verification successful (legacy)")
             } catch {
-                print("❌ CartViewController: Order verification failed (legacy): \(error.localizedDescription)")
+                print("⚠️ CartViewController: Order verification failed (legacy): \(error.localizedDescription)")
+                // Continue with order success despite verification failure
+                // The payment was successful even if verification failed
+            }
+            
+            // Always proceed with success flow
+            ThreadUtility.ensureMainThread { [weak self] in
+                guard let self = self else { return }
                 self.showOrderSuccess = true
                 self.showPaymentView = false
                 self.isProcessing = false
                 self.orderManager.clearCart()
-                print("✅ CartViewController: Order confirmed and cart cleared despite verification failure (legacy)")
+                
+                // Dispatch to ensure tab bar has time to update after order success UI appears
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    // Make sure tab bar shows up for navigation
+                    Task { @MainActor in
+                        if let tabBarController = UIApplication.keyWindow?.rootViewController as? UITabBarController {
+                            tabBarController.tabBar.isHidden = false
+                        }
+                    }
+                }
+                
+                print("✅ CartViewController: Order confirmed and cart cleared (legacy callback)")
             }
         }
     }
+    
     func onPaymentError(_ code: Int32, description: String) {
         print("❌ CartViewController: Razorpay Payment Failed!")
         print("   - Error Code: \(code)")
         print("   - Description: \(description)")
         
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            self.showPaymentView = false
-            self.isProcessing = false
+        // Check if we have an orderId, need to cancel the order on backend
+        if let orderId = self.orderId {
+            print("🔄 CartViewController: Attempting to cancel order \(orderId) after payment failure")
+            
+            // Attempt to cancel the order in the backend
+            Task {
+                do {
+                    // Try to cancel the order, but don't block the UI flow
+                    // This is a best effort to clean up the backend
+                    try await APIClient.shared.cancelOrder(orderId: orderId)
+                    print("✅ CartViewController: Order \(orderId) cancelled successfully after payment failure")
+                } catch {
+                    // Even if this fails, we still want to show the failure UI
+                    print("⚠️ CartViewController: Failed to cancel order after payment failure: \(error.localizedDescription)")
+                }
+                
+                // Show the failure UI regardless of backend cancellation result
+                await MainActor.run {
+                    self.showPaymentView = false
+                    self.isProcessing = false
+                    self.showOrderFail = true
+                    
+                    // Dispatch to ensure tab bar has time to update after order fail UI appears
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        // Make sure tab bar shows up for navigation
+                        Task { @MainActor in
+                            if let tabBarController = UIApplication.keyWindow?.rootViewController as? UITabBarController {
+                                tabBarController.tabBar.isHidden = false
+                            }
+                        }
+                    }
+                    
+                    print("⚠️ CartViewController: Setting showOrderFail to true")
+                }
+            }
+        } else {
+            // If no orderId, just update UI immediately
+            ThreadUtility.ensureMainThread { [weak self] in
+                guard let self = self else { return }
+                self.showPaymentView = false
+                self.isProcessing = false
+                self.showOrderFail = true
+                
+                // Dispatch to ensure tab bar has time to update after order fail UI appears
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    // Make sure tab bar shows up for navigation
+                    Task { @MainActor in
+                        if let tabBarController = UIApplication.keyWindow?.rootViewController as? UITabBarController {
+                            tabBarController.tabBar.isHidden = false
+                        }
+                    }
+                }
+                
+                print("⚠️ CartViewController: Setting showOrderFail to true (no orderId to cancel)")
+            }
         }
     }
 }

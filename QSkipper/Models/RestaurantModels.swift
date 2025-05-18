@@ -191,9 +191,12 @@ struct Product: Identifiable, Codable, Equatable {
         case category = "food_category"
         case isAvailable = "availability"
         case rating = "rating"
-        case extraTime = "extra_time"
+        case extraTime = "extraTime"      // Original camelCase
+        case extraTime_snake = "extra_time" // Snake case alternative
         case photoId = "photo_id"
         case isVeg = "is_veg"
+        case quantity = "quantity"        // For top picks API
+        case topPicks = "top_picks"       // For top picks API
     }
     
     // For the alternate field name for rating
@@ -315,7 +318,13 @@ struct Product: Identifiable, Codable, Equatable {
         }
         
         // Extra time - optional
-        extraTime = try? container.decodeIfPresent(Int.self, forKey: .extraTime)
+        if let extraTimeValue = try? container.decodeIfPresent(Int.self, forKey: .extraTime) {
+            extraTime = extraTimeValue
+        } else if let extraTimeSnakeValue = try? container.decodeIfPresent(Int.self, forKey: .extraTime_snake) {
+            extraTime = extraTimeSnakeValue
+        } else {
+            extraTime = nil
+        }
         
         // Photo ID - try to decode from container, then fall back to using product ID
         // FIX: Use a temporary variable to determine the photoId value
@@ -337,6 +346,26 @@ struct Product: Identifiable, Codable, Equatable {
             print("Warning: Failed to decode isVeg status, using default (veg)")
             isVeg = true  // Default to vegetarian
         }
+    }
+    
+    // Implement the encode(to:) method to ensure proper Encodable conformance
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encodeIfPresent(description, forKey: .description)
+        try container.encode(price, forKey: .price)
+        try container.encode(restaurantId, forKey: .restaurantId)
+        try container.encodeIfPresent(category, forKey: .category)
+        try container.encode(isAvailable, forKey: .isAvailable)
+        try container.encode(rating, forKey: .rating)
+        
+        // Use extraTime with the camelCase key since it's more standard
+        try container.encodeIfPresent(extraTime, forKey: .extraTime)
+        
+        try container.encodeIfPresent(photoId, forKey: .photoId)
+        try container.encode(isVeg, forKey: .isVeg)
     }
 }
 
@@ -458,6 +487,8 @@ struct ProductsResponse: Codable {
 }
 
 // Top Picks response for decoding top-picks endpoint
+// REMOVED: TopPicksResponse is now defined in APIClient.swift
+/*
 struct TopPicksResponse: Decodable {
     let allTopPicks: [Product]
     
@@ -488,4 +519,5 @@ struct TopPicksResponse: Decodable {
             allTopPicks = []
         }
     }
-} 
+}
+*/ 

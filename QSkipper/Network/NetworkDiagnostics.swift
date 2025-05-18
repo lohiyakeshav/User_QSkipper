@@ -8,29 +8,29 @@ class NetworkDiagnostics {
     /// Tests the connectivity to the backend API with a simple ping
     func testAPIConnectivity() async -> (isReachable: Bool, responseTime: TimeInterval, error: Error?) {
         let startTime = Date()
-        let url = URL(string: "https://qskipperbackend.onrender.com/ping")!
-        
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.timeoutInterval = 15
         
         do {
-            print("🔍 NetworkDiagnostics: Testing connectivity to API...")
-            let (_, response) = try await URLSession.shared.data(for: request)
+            print("🔍 NetworkDiagnostics: Testing connectivity to API using APIClient...")
+            
+            // Use APIClient to test connectivity
+            let _: Data = try await APIClient.shared.request(path: APIEndpoints.ping, forceRequest: true)
+            
             let endTime = Date()
             let responseTime = endTime.timeIntervalSince(startTime)
             
-            guard let httpResponse = response as? HTTPURLResponse else {
-                return (false, 0, NSError(domain: "NetworkDiagnostics", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid response"]))
-            }
-            
-            print("✅ NetworkDiagnostics: API responded with status \(httpResponse.statusCode) in \(String(format: "%.2f", responseTime)) seconds")
-            return (httpResponse.statusCode == 200, responseTime, nil)
-        } catch {
+            print("✅ NetworkDiagnostics: API responded successfully in \(String(format: "%.2f", responseTime)) seconds")
+            return (true, responseTime, nil)
+        } catch let error as APIClient.APIError {
             let endTime = Date()
             let responseTime = endTime.timeIntervalSince(startTime)
             
             print("❌ NetworkDiagnostics: API connectivity test failed: \(error.localizedDescription)")
+            return (false, responseTime, error)
+        } catch {
+            let endTime = Date()
+            let responseTime = endTime.timeIntervalSince(startTime)
+            
+            print("❌ NetworkDiagnostics: API connectivity test failed with unexpected error: \(error.localizedDescription)")
             return (false, responseTime, error)
         }
     }
@@ -38,37 +38,26 @@ class NetworkDiagnostics {
     /// Tests all major API endpoints for connectivity
     func testAllEndpoints() async -> [String: Bool] {
         let endpoints = [
-            "Base": "/ping",
-            "Restaurants": "/get_All_Restaurant",
-            "Order": "/order-placed",
-            "Schedule": "/schedule-order-placed"
+            "Base": APIEndpoints.ping,
+            "Restaurants": APIEndpoints.getAllRestaurants,
+            "Order": APIEndpoints.orderPlaced,
+            "Schedule": APIEndpoints.scheduleOrderPlaced
         ]
         
         var results = [String: Bool]()
         
         for (name, path) in endpoints {
-            let url = URL(string: "https://qskipperbackend.onrender.com\(path)")!
-            var request = URLRequest(url: url)
-            request.httpMethod = path == "/order-placed" || path == "/schedule-order-placed" ? "OPTIONS" : "GET"
-            request.timeoutInterval = 10
-            
             print("🔍 Testing endpoint: \(name) (\(path))")
             
             do {
-                let (_, response) = try await URLSession.shared.data(for: request)
-                guard let httpResponse = response as? HTTPURLResponse else {
-                    results[name] = false
-                    continue
-                }
+                // For POST endpoints, use OPTIONS method
+                let method = path == APIEndpoints.orderPlaced || path == APIEndpoints.scheduleOrderPlaced ? "OPTIONS" : "GET"
                 
-                // For OPTIONS request, we just care that the server responds, not the status code
-                if request.httpMethod == "OPTIONS" {
-                    results[name] = true
-                    print("✅ Endpoint \(name) is reachable (OPTIONS request)")
-                } else {
-                    results[name] = (200...299).contains(httpResponse.statusCode)
-                    print("✅ Endpoint \(name) returned status \(httpResponse.statusCode)")
-                }
+                // Use APIClient for the request, forcing it to bypass rate limiting
+                let _: Data = try await APIClient.shared.request(path: path, method: method, forceRequest: true)
+                
+                results[name] = true
+                print("✅ Endpoint \(name) is reachable")
             } catch {
                 results[name] = false
                 print("❌ Endpoint \(name) test failed: \(error.localizedDescription)")

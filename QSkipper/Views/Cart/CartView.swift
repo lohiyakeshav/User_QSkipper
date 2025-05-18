@@ -82,6 +82,23 @@ struct CartView: View {
                     )
                     .transition(.opacity)
                     .animation(.easeInOut)
+                    .hideTabBar(false)
+            }
+            
+            if controller.showOrderFail {
+                // Present the OrderFailView as a full screen overlay
+                Color.white
+                    .ignoresSafeArea()
+                    .overlay(
+                        OrderFailView(
+                            cartManager: orderManager,
+                            orderId: controller.orderId
+                        )
+                        .environmentObject(TabSelection.shared)
+                    )
+                    .transition(.opacity)
+                    .animation(.easeInOut)
+                    .hideTabBar(false)
             }
             
             if controller.isProcessing {
@@ -140,79 +157,59 @@ struct CartView: View {
 }
     // Function to hide tab bar more reliably
     private func hideTabBar(_ hidden: Bool) {
-        // Update UITabBar appearance
-        let tabBarAppearance = UITabBarAppearance()
-        if hidden {
-            tabBarAppearance.configureWithTransparentBackground()
-            tabBarAppearance.backgroundColor = UIColor.clear
-            tabBarAppearance.shadowColor = UIColor.clear
+        setTabBarHidden(hidden)
+    }
+
+    private func setTabBarHidden(_ hidden: Bool) {
+        Task { @MainActor in
+            let keyWindow = UIApplication.keyWindow
             
-            // Make all colors transparent
-            tabBarAppearance.stackedLayoutAppearance.normal.iconColor = .clear
-            tabBarAppearance.stackedLayoutAppearance.normal.titleTextAttributes = [.foregroundColor: UIColor.clear]
-            tabBarAppearance.stackedLayoutAppearance.selected.iconColor = .clear
-            tabBarAppearance.stackedLayoutAppearance.selected.titleTextAttributes = [.foregroundColor: UIColor.clear]
-        } else {
-            tabBarAppearance.configureWithDefaultBackground()
-        }
-        
-        UITabBar.appearance().standardAppearance = tabBarAppearance
-        UITabBar.appearance().scrollEdgeAppearance = tabBarAppearance
-        
-        // Directly hide/show the tab bar using multiple approaches
-        DispatchQueue.main.async {
-            let scenes = UIApplication.shared.connectedScenes
-            let windowScenes = scenes.compactMap { $0 as? UIWindowScene }
-            for windowScene in windowScenes {
-                for window in windowScene.windows {
-                    // Approach 1: Direct access to tab bar controller
-                    if let rootViewController = window.rootViewController as? UITabBarController {
-                        // Hide both the tab bar and its items
-                        rootViewController.tabBar.isHidden = hidden
-                        rootViewController.tabBar.isTranslucent = hidden
-                        
-                        // Move tab bar off-screen if hidden
-                        if hidden {
-                            rootViewController.tabBar.frame.origin.y = UIScreen.main.bounds.height + 100
-                            // Make items invisible
-                            for item in rootViewController.tabBar.items ?? [] {
-                                item.isEnabled = false
-                                item.title = nil
-                                item.image = nil
-                                item.selectedImage = nil
-                            }
-                        } else {
-                            // Reset position
-                            rootViewController.tabBar.frame.origin.y = UIScreen.main.bounds.height - rootViewController.tabBar.frame.height
-                            // Restore items
-                            for item in rootViewController.tabBar.items ?? [] {
-                                item.isEnabled = true
-                            }
-                        }
+            // Approach 1: Direct access to tab bar controller
+            if let rootViewController = keyWindow?.rootViewController as? UITabBarController {
+                // Hide both the tab bar and its items
+                rootViewController.tabBar.isHidden = hidden
+                rootViewController.tabBar.isTranslucent = hidden
+                
+                // Move tab bar off-screen if hidden
+                if hidden {
+                    rootViewController.tabBar.frame.origin.y = UIScreen.main.bounds.height + 100
+                    // Make items invisible
+                    for item in rootViewController.tabBar.items ?? [] {
+                        item.isEnabled = false
+                        item.title = nil
+                        item.image = nil
+                        item.selectedImage = nil
                     }
-                    
-                    // Approach 2: When tab bar controller is not the root
-                    if let tabBarController = window.rootViewController?.tabBarController {
-                        tabBarController.tabBar.isHidden = hidden
-                        tabBarController.tabBar.isTranslucent = hidden
-                        
-                        if hidden {
-                            tabBarController.tabBar.frame.origin.y = UIScreen.main.bounds.height + 100
-                            // Set user interaction enabled to false for all tab bar items
-                            for item in tabBarController.tabBar.items ?? [] {
-                                item.isEnabled = false
-                                item.title = nil
-                                item.image = nil
-                                item.selectedImage = nil
-                            }
-                        } else {
-                            // Reset position
-                            tabBarController.tabBar.frame.origin.y = UIScreen.main.bounds.height - tabBarController.tabBar.frame.height
-                            // Restore items
-                            for item in tabBarController.tabBar.items ?? [] {
-                                item.isEnabled = true
-                            }
-                        }
+                } else {
+                    // Reset position
+                    rootViewController.tabBar.frame.origin.y = UIScreen.main.bounds.height - rootViewController.tabBar.frame.height
+                    // Restore items
+                    for item in rootViewController.tabBar.items ?? [] {
+                        item.isEnabled = true
+                    }
+                }
+            }
+            
+            // Approach 2: When tab bar controller is not the root
+            if let tabBarController = keyWindow?.rootViewController?.tabBarController {
+                tabBarController.tabBar.isHidden = hidden
+                tabBarController.tabBar.isTranslucent = hidden
+                
+                if hidden {
+                    tabBarController.tabBar.frame.origin.y = UIScreen.main.bounds.height + 100
+                    // Set user interaction enabled to false for all tab bar items
+                    for item in tabBarController.tabBar.items ?? [] {
+                        item.isEnabled = false
+                        item.title = nil
+                        item.image = nil
+                        item.selectedImage = nil
+                    }
+                } else {
+                    // Reset position
+                    tabBarController.tabBar.frame.origin.y = UIScreen.main.bounds.height - tabBarController.tabBar.frame.height
+                    // Restore items
+                    for item in tabBarController.tabBar.items ?? [] {
+                        item.isEnabled = true
                     }
                 }
             }
@@ -1018,6 +1015,8 @@ struct HideTabBarModifier: ViewModifier {
             .onAppear {
                 if hidden {
                     hideTabBar()
+                } else {
+                    showTabBar()
                 }
             }
             .onDisappear {
@@ -1028,67 +1027,57 @@ struct HideTabBarModifier: ViewModifier {
     }
     
     private func hideTabBar() {
-        DispatchQueue.main.async {
-            let scenes = UIApplication.shared.connectedScenes
-            let windowScenes = scenes.compactMap { $0 as? UIWindowScene }
+        Task { @MainActor in
+            let keyWindow = UIApplication.keyWindow
             
-            for windowScene in windowScenes {
-                for window in windowScene.windows {
-                    if let tabBarController = window.rootViewController as? UITabBarController {
-                        // Hide the tab bar
-                        tabBarController.tabBar.isHidden = true
-                        
-                        // Make it transparent
-                        tabBarController.tabBar.isTranslucent = true
-                        tabBarController.tabBar.backgroundColor = .clear
-                        tabBarController.tabBar.barTintColor = .clear
-                        
-                        // Move it off screen
-                        tabBarController.tabBar.frame.origin.y = UIScreen.main.bounds.height + 200
-                    }
-                    
-                    // Check if the tab bar controller is nested
-                    if let tabBarController = window.rootViewController?.tabBarController {
-                        tabBarController.tabBar.isHidden = true
-                        tabBarController.tabBar.isTranslucent = true
-                        tabBarController.tabBar.backgroundColor = .clear
-                        tabBarController.tabBar.barTintColor = .clear
-                        tabBarController.tabBar.frame.origin.y = UIScreen.main.bounds.height + 200
-                    }
-                }
+            if let tabBarController = keyWindow?.rootViewController as? UITabBarController {
+                // Hide the tab bar
+                tabBarController.tabBar.isHidden = true
+                
+                // Make it transparent
+                tabBarController.tabBar.isTranslucent = true
+                tabBarController.tabBar.backgroundColor = .clear
+                tabBarController.tabBar.barTintColor = .clear
+                
+                // Move it off screen
+                tabBarController.tabBar.frame.origin.y = UIScreen.main.bounds.height + 200
+            }
+            
+            // Check if the tab bar controller is nested
+            if let tabBarController = keyWindow?.rootViewController?.tabBarController {
+                tabBarController.tabBar.isHidden = true
+                tabBarController.tabBar.isTranslucent = true
+                tabBarController.tabBar.backgroundColor = .clear
+                tabBarController.tabBar.barTintColor = .clear
+                tabBarController.tabBar.frame.origin.y = UIScreen.main.bounds.height + 200
             }
         }
     }
     
     private func showTabBar() {
-        DispatchQueue.main.async {
-            let scenes = UIApplication.shared.connectedScenes
-            let windowScenes = scenes.compactMap { $0 as? UIWindowScene }
+        Task { @MainActor in
+            let keyWindow = UIApplication.keyWindow
             
-            for windowScene in windowScenes {
-                for window in windowScene.windows {
-                    if let tabBarController = window.rootViewController as? UITabBarController {
-                        // Show the tab bar
-                        tabBarController.tabBar.isHidden = false
-                        
-                        // Reset properties
-                        tabBarController.tabBar.isTranslucent = false
-                        tabBarController.tabBar.backgroundColor = nil
-                        tabBarController.tabBar.barTintColor = nil
-                        
-                        // Move it back to normal position
-                        tabBarController.tabBar.frame.origin.y = UIScreen.main.bounds.height - tabBarController.tabBar.frame.height
-                    }
-                    
-                    // Check if the tab bar controller is nested
-                    if let tabBarController = window.rootViewController?.tabBarController {
-                        tabBarController.tabBar.isHidden = false
-                        tabBarController.tabBar.isTranslucent = false
-                        tabBarController.tabBar.backgroundColor = nil
-                        tabBarController.tabBar.barTintColor = nil
-                        tabBarController.tabBar.frame.origin.y = UIScreen.main.bounds.height - tabBarController.tabBar.frame.height
-                    }
-                }
+            if let tabBarController = keyWindow?.rootViewController as? UITabBarController {
+                // Show the tab bar
+                tabBarController.tabBar.isHidden = false
+                
+                // Reset properties
+                tabBarController.tabBar.isTranslucent = false
+                tabBarController.tabBar.backgroundColor = nil
+                tabBarController.tabBar.barTintColor = nil
+                
+                // Move it back to normal position
+                tabBarController.tabBar.frame.origin.y = UIScreen.main.bounds.height - tabBarController.tabBar.frame.height
+            }
+            
+            // Check if the tab bar controller is nested
+            if let tabBarController = keyWindow?.rootViewController?.tabBarController {
+                tabBarController.tabBar.isHidden = false
+                tabBarController.tabBar.isTranslucent = false
+                tabBarController.tabBar.backgroundColor = nil
+                tabBarController.tabBar.barTintColor = nil
+                tabBarController.tabBar.frame.origin.y = UIScreen.main.bounds.height - tabBarController.tabBar.frame.height
             }
         }
     }

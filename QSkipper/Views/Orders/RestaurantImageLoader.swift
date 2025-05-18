@@ -67,11 +67,11 @@ struct RestaurantImageLoader: View {
         isLoading = true
         print("📸 Loading restaurant details for ID: \(restaurantId)")
         
-        // Use NetworkUtils to get restaurant details and image
-        Task {
+        // Use NetworkUtils to get restaurant details and image with user-initiated priority
+        Task(priority: .userInitiated) {
             do {
                 let fetchedRestaurant = try await NetworkUtils.shared.fetchRestaurant(with: restaurantId)
-                DispatchQueue.main.async {
+                await MainActor.run {
                     self.restaurant = fetchedRestaurant
                     print("✅ Successfully loaded restaurant: \(fetchedRestaurant.name)")
                     
@@ -87,7 +87,9 @@ struct RestaurantImageLoader: View {
                 print("❌ Error fetching restaurant data: \(error)")
                 
                 // As a fallback, try loading image directly using the restaurant ID
-                loadImageFromPhotoId(restaurantId)
+                await MainActor.run {
+                    loadImageFromPhotoId(restaurantId)
+                }
             }
         }
     }
@@ -95,18 +97,18 @@ struct RestaurantImageLoader: View {
     private func loadImageFromPhotoId(_ photoId: String) {
         print("📸 Loading restaurant image with photo ID: \(photoId)")
         
-        // Use NetworkUtils to get restaurant image
-        Task {
+        // Use NetworkUtils to get restaurant image with user-initiated priority
+        Task(priority: .userInitiated) {
             do {
                 let image = try await NetworkUtils.shared.fetchRestaurantImage(photoId: photoId)
-                DispatchQueue.main.async {
+                await MainActor.run {
                     self.restaurantImage = image
                     self.isLoading = false
                     print("✅ Successfully loaded restaurant image for photo ID: \(photoId)")
                 }
             } catch {
                 print("❌ Error loading restaurant image: \(error)")
-                DispatchQueue.main.async {
+                await MainActor.run {
                     self.isLoading = false
                 }
             }
@@ -175,15 +177,28 @@ struct RemoteImage: View {
             return
         }
         
-        URLSession.shared.dataTask(with: url) { data, response, error in
-            isLoading = false
-            
-            if let data = data, let loadedImage = UIImage(data: data) {
-                DispatchQueue.main.async {
-                    self.image = loadedImage
+        // Use Task with appropriate priority to handle image loading
+        Task(priority: .userInitiated) {
+            do {
+                let (data, _) = try await URLSession.shared.data(from: url)
+                
+                if let loadedImage = UIImage(data: data) {
+                    await MainActor.run {
+                        self.image = loadedImage
+                        self.isLoading = false
+                    }
+                } else {
+                    await MainActor.run {
+                        self.isLoading = false
+                    }
+                }
+            } catch {
+                print("❌ Error loading remote image: \(error.localizedDescription)")
+                await MainActor.run {
+                    self.isLoading = false
                 }
             }
-        }.resume()
+        }
     }
 }
 

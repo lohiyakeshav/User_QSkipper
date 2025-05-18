@@ -63,48 +63,60 @@ class FavoriteManager: ObservableObject {
 }
 
 class HomeViewModel: ObservableObject {
-    @Published var restaurants: [Restaurant] = []
-    @Published var topPicks: [Product] = []
-    @Published var isLoading = false
-    @Published var isLoadingTopPicks = false
-    @Published var errorMessage: String? = nil
-    @Published var showError = false
-    @Published var cuisines: [String] = []
-    
+    private let restaurantManager = RestaurantManager.shared
     private let networkUtils = NetworkUtils.shared
     
+    @Published var restaurants: [Restaurant] = []
+    @Published var topPicks: [Product] = []
+    @Published var cuisines: [String] = []
+    
+    @Published var isLoading: Bool = false
+    @Published var isLoadingTopPicks: Bool = false
+    @Published var errorMessage: String? = nil
+    @Published var showError: Bool = false
+    @Published var lastRefreshTime: Date = Date()
+    
+    // Cache and cooldown management
+    private var lastTopPicksRefreshTime: TimeInterval = 0
+    private var lastRestaurantsRefreshTime: TimeInterval = 0
+    private let cooldownPeriod: TimeInterval = 30 // 30 seconds cooldown
+    
+    // Load all restaurants
+    @MainActor
     func loadRestaurants() async {
-        await MainActor.run {
-            isLoading = true
-            errorMessage = nil
-            showError = false
+        // Check cooldown timer
+        let now = Date().timeIntervalSince1970
+        if now - lastRestaurantsRefreshTime < cooldownPeriod && !restaurants.isEmpty {
+            print("⏱️ Restaurant refresh cooldown active. Using cached data. Next refresh available in \(Int(cooldownPeriod - (now - lastRestaurantsRefreshTime)))s")
+            return
         }
         
+        isLoading = true
+        errorMessage = nil
+        showError = false
+        
         do {
-            print("📡 Fetching restaurants from network: \(networkUtils.baseURl.absoluteString)get_All_Restaurant")
-            let fetchedRestaurants = try await networkUtils.fetchRestaurants()
+            print("📡 HomeViewModel: Loading restaurants...")
+            let fetchedRestaurants = try await restaurantManager.fetchAllRestaurants()
             
-            await MainActor.run {
-                print("✅ Successfully loaded \(fetchedRestaurants.count) restaurants")
-                self.restaurants = fetchedRestaurants
-                
-                // Extract unique cuisines from restaurants
-                extractCuisines()
-                isLoading = false
-            }
+            print("✅ Successfully loaded \(fetchedRestaurants.count) restaurants")
+            self.restaurants = fetchedRestaurants
+            
+            // Extract cuisines after loading restaurants
+            extractCuisines()
+            isLoading = false
+            lastRefreshTime = Date()
+            lastRestaurantsRefreshTime = now
         } catch {
             print("❌ Error loading restaurants: \(error.localizedDescription)")
-            
-            await MainActor.run {
-                errorMessage = "Could not load restaurants: \(error.localizedDescription)"
-                showError = true
-                isLoading = false
-            }
+            errorMessage = "Could not load restaurants: \(error.localizedDescription)"
+            showError = true
+            isLoading = false
         }
     }
     
     // Extract unique cuisines from restaurants
-    private func extractCuisines() {
+    func extractCuisines() {
         var uniqueCuisines = Set<String>()
         
         // Collect all cuisines and filter out nil or empty values
@@ -119,27 +131,58 @@ class HomeViewModel: ObservableObject {
     }
     
     func loadTopPicks() async {
+        // Check cooldown timer
+        let now = Date().timeIntervalSince1970
+        if now - lastTopPicksRefreshTime < cooldownPeriod && !topPicks.isEmpty {
+            print("⏱️ TopPicks refresh cooldown active. Using cached data. Next refresh available in \(Int(cooldownPeriod - (now - lastTopPicksRefreshTime)))s")
+            return
+        }
+        
+        if isLoadingTopPicks {
+            print("⚠️ HomeViewModel: Already loading top picks, skipping duplicate request")
+            return
+        }
+        
         await MainActor.run {
             isLoadingTopPicks = true
             errorMessage = nil
-            showError = false
         }
         
         do {
-            print("📡 Fetching top picks from network")
+            print("📡 HomeViewModel: Fetching top picks from network")
             let fetchedTopPicks = try await networkUtils.fetchTopPicks()
             
             await MainActor.run {
-                print("✅ Successfully loaded \(fetchedTopPicks.count) top picks")
-                self.topPicks = fetchedTopPicks
+                print("✅ HomeViewModel: Successfully loaded \(fetchedTopPicks.count) top picks")
+                
+                if !fetchedTopPicks.isEmpty {
+                    // Only update if we got non-empty results
+                    self.topPicks = fetchedTopPicks
+                    lastTopPicksRefreshTime = now
+                } else {
+                    print("⚠️ HomeViewModel: Received empty top picks array")
+                    // Keep existing top picks if they exist
+                    if self.topPicks.isEmpty {
+                        print("⚠️ HomeViewModel: No existing top picks, keeping empty array")
+                    } else {
+                        print("⚠️ HomeViewModel: Keeping existing \(self.topPicks.count) top picks")
+                    }
+                }
+                
                 isLoadingTopPicks = false
+                lastRefreshTime = Date()
             }
         } catch {
-            print("❌ Error loading top picks: \(error.localizedDescription)")
+            print("❌ HomeViewModel: Error loading top picks: \(error.localizedDescription)")
             
             await MainActor.run {
-                errorMessage = "Could not load top picks: \(error.localizedDescription)"
-                showError = true
+                if topPicks.isEmpty {
+                    // Only show error if we don't have any existing top picks
+                    errorMessage = "Could not load top picks: \(error.localizedDescription)"
+                    showError = true
+                } else {
+                    print("⚠️ HomeViewModel: Error refreshing, but keeping existing \(self.topPicks.count) top picks")
+                }
                 isLoadingTopPicks = false
             }
         }
@@ -170,6 +213,7 @@ struct HomeView: View {
     @StateObject private var locationManager = LocationManager.shared
     @StateObject private var orderManager = OrderManager.shared
     @StateObject private var favoriteManager = FavoriteManager.shared
+    @EnvironmentObject private var preloadManager: PreloadManager
     @State private var showLocationPicker = false
     @State private var isLoadingLocation = false
     @State private var selectedTab: Tab = .home
@@ -177,7 +221,11 @@ struct HomeView: View {
     @State private var searchText = ""
     @State private var selectedCuisine: String? = nil
     @State private var isSearching = false
+    @State private var isPullingToRefresh = false
+    @State private var lastRefreshActionTime = Date().timeIntervalSince1970 - 60
     @FocusState private var isSearchFieldFocused: Bool
+    
+    private let minRefreshInterval: TimeInterval = 30
     
     var filteredRestaurants: [Restaurant] {
         var result = viewModel.restaurants
@@ -375,13 +423,61 @@ struct HomeView: View {
     
     private func loadData() {
         Task {
+            // Check if we should debounce this refresh action
+            let currentTime = Date().timeIntervalSince1970
+            if currentTime - lastRefreshActionTime < minRefreshInterval {
+                print("⏱️ Refresh action debounced - too soon since last refresh (\(Int(currentTime - lastRefreshActionTime))s)")
+                return
+            }
+            
+            // Update the last refresh time
+            await MainActor.run {
+                lastRefreshActionTime = currentTime
+            }
+            
             print("🔄 Loading initial data")
             
-            // Load restaurants first with a timeout
-            await viewModel.loadRestaurants()
+            // Check if preloaded data is available - safely access on MainActor
+            let hasPreloadedTopPicks = await MainActor.run {
+                return !preloadManager.topPicks.isEmpty
+            }
             
-            // Then load top picks
-            await viewModel.loadTopPicks()
+            if hasPreloadedTopPicks {
+                await MainActor.run {
+                    print("✅ Using preloaded top picks: \(preloadManager.topPicks.count) items")
+                    viewModel.topPicks = preloadManager.topPicks
+                }
+            } else {
+                // Load top picks first
+                print("🔄 Starting top picks load")
+                await viewModel.loadTopPicks()
+                print("✅ Top picks load completed")
+            }
+            
+            // Check if preloaded restaurants are available - safely access on MainActor
+            let hasPreloadedRestaurants = await MainActor.run {
+                return !preloadManager.restaurants.isEmpty
+            }
+            
+            if hasPreloadedRestaurants {
+                await MainActor.run {
+                    print("✅ Using preloaded restaurants: \(preloadManager.restaurants.count) items")
+                    viewModel.restaurants = preloadManager.restaurants
+                    viewModel.extractCuisines()
+                }
+            } else {
+                // Then load restaurants
+                print("🔄 Starting restaurants load")
+                await viewModel.loadRestaurants()
+                print("✅ Restaurants load completed")
+            }
+            
+            // If top picks are still empty after initial load, try refreshing them again
+            if viewModel.topPicks.isEmpty {
+                print("🔄 Top picks still empty, trying to refresh...")
+                try? await Task.sleep(nanoseconds: 1_000_000_000) // Wait 1 second
+                await viewModel.loadTopPicks()
+            }
         }
     }
     
@@ -389,6 +485,66 @@ struct HomeView: View {
     private var homeContent: some View {
         NavigationView {
             ScrollView {
+                // Pull to refresh control
+                GeometryReader { geo in
+                    if geo.frame(in: .global).minY > 80 && !isPullingToRefresh && !viewModel.isLoading {
+                        Spacer()
+                            .onAppear {
+                                isPullingToRefresh = true
+                                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                                
+                                // Refresh data
+                                Task {
+                                    // Check if we should debounce this refresh action
+                                    let currentTime = Date().timeIntervalSince1970
+                                    if currentTime - lastRefreshActionTime < minRefreshInterval {
+                                        print("⏱️ Main pull-to-refresh debounced - too soon since last refresh (\(Int(currentTime - lastRefreshActionTime))s)")
+                                        await MainActor.run {
+                                            isPullingToRefresh = false
+                                        }
+                                        return
+                                    }
+                                    
+                                    // Update the last refresh time
+                                    await MainActor.run {
+                                        lastRefreshActionTime = currentTime
+                                    }
+                                    
+                                    print("🔄 Pull-to-refresh triggered for entire view")
+                                    
+                                    // Load sequentially - top picks first, then restaurants
+                                    print("🔄 Starting sequential refresh - top picks first")
+                                    await viewModel.loadTopPicks()
+                                    print("✅ Pull-to-refresh top picks completed")
+                                    
+                                    print("🔄 Starting sequential refresh - restaurants")
+                                    await viewModel.loadRestaurants()
+                                    print("✅ Pull-to-refresh restaurants completed")
+                                    
+                                    isPullingToRefresh = false
+                                }
+                            }
+                    } else if geo.frame(in: .global).minY <= 0 {
+                        Spacer()
+                            .onAppear {
+                                isPullingToRefresh = false
+                            }
+                    }
+                }
+                .frame(height: 0)
+                
+                // Refresh indicator
+                if isPullingToRefresh || viewModel.isLoading {
+                    HStack {
+                        Spacer()
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: AppColors.primaryGreen))
+                            .scaleEffect(1.5)
+                            .padding()
+                        Spacer()
+                    }
+                }
+                
                 VStack(spacing: 0) {
                     // Top bar with location and cart
                     HStack {
@@ -419,6 +575,8 @@ struct HomeView: View {
                         }
                         
                         Spacer()
+                        
+                        // Last updated timestamp removed
                         
                         NavigationLink(destination: CartView()
                             .environmentObject(orderManager)
@@ -483,8 +641,18 @@ struct HomeView: View {
                 
                 // Main scrollable content
                 VStack(spacing: 15) {
-                    // TOP PICKS SECTION
+                    // TOP PICKS SECTION - Always displayed at the top with priority
                     topPicksSection
+                      .onAppear {
+                          print("📱 Top picks section appeared")
+                          // If the top picks are empty when the section appears, try to load them
+                          if viewModel.topPicks.isEmpty && !viewModel.isLoadingTopPicks {
+                              Task {
+                                  print("🔄 Refreshing top picks from onAppear")
+                                  await viewModel.loadTopPicks()
+                              }
+                          }
+                      }
                     
                     // CUISINES SECTION (Horizontal scrolling buttons)
                     cuisinesSection
@@ -543,7 +711,7 @@ struct HomeView: View {
                 .frame(maxWidth: .infinity)
                 .background(Color.white)
             } else if viewModel.topPicks.isEmpty {
-                // Empty state
+                // Empty state with refresh button
                 VStack {
                     Image(systemName: "fork.knife")
                         .font(.system(size: 40))
@@ -553,13 +721,59 @@ struct HomeView: View {
                     Text("No top picks available")
                         .font(.system(size: 16, weight: .medium))
                         .foregroundColor(.gray)
+                        .padding(.bottom, 5)
+                    
+                    Button {
+                        Task {
+                            // Check if we should debounce this refresh action
+                            let currentTime = Date().timeIntervalSince1970
+                            if currentTime - lastRefreshActionTime < minRefreshInterval {
+                                print("⏱️ Manual refresh debounced - too soon since last refresh (\(Int(currentTime - lastRefreshActionTime))s)")
+                                return
+                            }
+                            
+                            // Update the last refresh time
+                            lastRefreshActionTime = currentTime
+                            
+                            print("🔄 Manual refresh of top picks initiated")
+                            await viewModel.loadTopPicks()
+                        }
+                    } label: {
+                        HStack {
+                            Image(systemName: "arrow.clockwise")
+                            Text("Refresh")
+                        }
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(AppColors.primaryGreen)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 8)
+                        .background(AppColors.primaryGreen.opacity(0.1))
+                        .cornerRadius(20)
+                    }
                 }
                 .frame(maxWidth: .infinity)
                 .frame(height: 160)
                 .background(Color.white)
             } else {
-                // Horizontal scrolling list of top picks
-                ScrollView(.horizontal, showsIndicators: false) {
+                // Horizontal scrolling list of top picks with refresh control
+                RefreshableScrollView(height: 160, refreshing: $viewModel.isLoadingTopPicks, action: {
+                    Task {
+                        // Check if we should debounce this refresh action
+                        let currentTime = Date().timeIntervalSince1970
+                        if currentTime - lastRefreshActionTime < minRefreshInterval {
+                            print("⏱️ Top picks refresh debounced - too soon since last refresh (\(Int(currentTime - lastRefreshActionTime))s)")
+                            return
+                        }
+                        
+                        // Update the last refresh time
+                        await MainActor.run {
+                            lastRefreshActionTime = currentTime
+                        }
+                        
+                        print("🔄 Pull-to-refresh triggered for top picks")
+                        await viewModel.loadTopPicks()
+                    }
+                }) {
                     HStack(spacing: 15) {
                         ForEach(viewModel.topPicks) { product in
                             TopPickCard(product: product, restaurant: viewModel.getRestaurantForProduct(product))

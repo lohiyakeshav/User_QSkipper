@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct OrderSuccessView: View {
+struct OrderFailView: View {
     @ObservedObject var cartManager: OrderManager
     @EnvironmentObject private var tabSelection: TabSelection
     @Environment(\.presentationMode) var presentationMode
@@ -19,24 +19,24 @@ struct OrderSuccessView: View {
                 
                 // Center content
                 VStack(spacing: 24) {
-                    // Success icon in circle
+                    // Error icon in circle
                     Circle()
-                        .fill(AppColors.primaryGreen)
+                        .fill(AppColors.errorRed)
                         .frame(width: 120, height: 120)
                         .overlay(
-                            Image(systemName: "checkmark")
+                            Image(systemName: "multiply")
                                 .resizable()
                                 .scaledToFit()
                                 .frame(width: 40, height: 40)
                                 .foregroundColor(.white)
                         )
                     
-                    // Success text
-                    Text("Congrats")
+                    // Error text
+                    Text("Payment Failed")
                         .font(.system(size: 30, weight: .bold))
-                        .foregroundColor(AppColors.primaryGreen)
+                        .foregroundColor(AppColors.errorRed)
                     
-                    Text("Order placed successfully!")
+                    Text("Your payment was not completed")
                         .font(.system(size: 18))
                         .multilineTextAlignment(.center)
                 }
@@ -53,9 +53,9 @@ struct OrderSuccessView: View {
 }
 
 #Preview {
-    OrderSuccessView(
+    OrderFailView(
         cartManager: OrderManager.shared,
         orderId: "67ed11db351a70ac8b9d54af"
     )
     .environmentObject(TabSelection.shared)
-} 
+}

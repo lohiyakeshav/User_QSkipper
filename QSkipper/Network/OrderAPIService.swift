@@ -96,183 +96,145 @@ enum OrderAPIError: Error {
 class OrderAPIService {
     static let shared = OrderAPIService()
     
-    private let baseURL = "https://qskipperbackend.onrender.com"
-    private let maxRetries = 3
-    
     private init() {}
     
     func placeOrder(jsonDict: [String: Any]) async throws -> String {
-        return try await sendRequest(endpoint: "/order-placed", jsonDict: jsonDict)
+        print("📡 OrderAPIService: Delegating placeOrder to APIClient")
+        return try await APIClient.shared.placeOrder(orderData: jsonDict)
     }
     
     // for verifying payment
     func verifyOrder(jsonDict: [String: Any]) async throws -> HTTPURLResponse {
-        guard let url = URL(string: "\(APIEndpoints.baseURL)/verify-order") else {
-            print("❌ OrderAPIService: Invalid URL: \(APIEndpoints.baseURL)/verify-order")
-            throw URLError(.badURL)
-        }
-        
-        print("🌐 OrderAPIService: Sending request to \(url.absoluteString)")
-        
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        print("📡 OrderAPIService: Delegating verifyOrder to APIClient")
         
         do {
+            // Serialize the data
             let requestData = try JSONSerialization.data(withJSONObject: jsonDict)
-            if let jsonString = String(data: requestData, encoding: .utf8) {
-                print("📄 OrderAPIService: Request payload: \(jsonString)")
+            
+            // Send the request through APIClient
+            let data = try await APIClient.shared.request(
+                path: "/verify-order",
+                method: "POST",
+                body: requestData,
+                headers: ["Content-Type": "application/json"]
+            )
+            
+            // Create a mock HTTPURLResponse since we can't construct it directly
+            // This is needed for backward compatibility
+            let response = HTTPURLResponse(
+                url: URL(string: "https://qskipperbackend.onrender.com/verify-order")!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            
+            if let jsonString = String(data: data, encoding: .utf8) {
+                print("📩 OrderAPIService: Response body: \(jsonString)")
             }
-            request.httpBody = requestData
-        } catch {
-            print("❌ OrderAPIService: Failed to serialize JSON: \(error.localizedDescription)")
-            throw error
-        }
-        
-        do {
-            let (data, response) = try await URLSession.shared.data(for: request)
             
-            guard let httpResponse = response as? HTTPURLResponse else {
-                print("❌ OrderAPIService: No HTTP response received")
-                throw NSError(domain: "VerifyOrder", code: -1, userInfo: [NSLocalizedDescriptionKey: "No response received"])
-            }
+            return response
+        } catch let error as APIClient.APIError {
+            print("❌ OrderAPIService: API error: \(error.localizedDescription)")
+            let statusCode = 500
             
-            if let bodyString = String(data: data, encoding: .utf8) {
-                print("📩 OrderAPIService: Response body: \(bodyString)")
-            } else {
-                print("📩 OrderAPIService: No response body (empty or binary data)")
-            }
-            
-            print("📊 OrderAPIService: Response status code: \(httpResponse.statusCode)")
-            
-            if httpResponse.statusCode != 200 {
+            if case .serverError(let code, _) = error {
+                let response = HTTPURLResponse(
+                    url: URL(string: "https://qskipperbackend.onrender.com/verify-order")!,
+                    statusCode: code,
+                    httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "application/json"]
+                )!
+                
                 throw NSError(
                     domain: "VerifyOrder",
-                    code: httpResponse.statusCode,
-                    userInfo: [NSLocalizedDescriptionKey: "Unexpected status code: \(httpResponse.statusCode)"]
+                    code: code,
+                    userInfo: [NSLocalizedDescriptionKey: "Unexpected status code: \(code)"]
                 )
             }
             
-            return httpResponse
+            throw NSError(
+                domain: "VerifyOrder",
+                code: statusCode,
+                userInfo: [NSLocalizedDescriptionKey: error.localizedDescription]
+            )
         } catch {
             print("❌ OrderAPIService: Request failed: \(error.localizedDescription)")
             throw error
         }
     }
-
-    
     
     func placeScheduledOrder(jsonDict: [String: Any]) async throws -> String {
-        return try await sendRequest(endpoint: "/schedule-order-placed", jsonDict: jsonDict)
-    }
-    
-    private func sendRequest(endpoint: String, jsonDict: [String: Any]) async throws -> String {
-        guard let url = URL(string: "\(baseURL)\(endpoint)") else {
-            throw OrderAPIError.networkError("Invalid URL")
+        print("📡 OrderAPIService: Delegating placeScheduledOrder to APIClient")
+        
+        // Validate and ensure required fields for scheduled orders
+        var modifiedJsonDict = jsonDict
+        
+        // IMPORTANT: Set takeAway to true for scheduled orders regardless of what was passed
+        // This is required by the backend API which returns 400 if takeAway is false
+        modifiedJsonDict["takeAway"] = true
+        
+        // Print the exact JSON and values before sending
+        if let takeAwayValue = modifiedJsonDict["takeAway"] {
+            print("📝 OrderAPIService: takeAway value type: \(type(of: takeAwayValue)), value: \(takeAwayValue)")
         }
         
-        var urlRequest = URLRequest(url: url)
-        urlRequest.httpMethod = "POST"
-        urlRequest.addValue("application/json", forHTTPHeaderField: "Content-Type")
-        urlRequest.timeoutInterval = 60
-        
-        let jsonData = try JSONSerialization.data(withJSONObject: jsonDict, options: .prettyPrinted)
-        urlRequest.httpBody = jsonData
-        
-        print("📤 OrderAPI: Sending request to \(endpoint):")
-        if let jsonString = String(data: jsonData, encoding: .utf8) {
-            print(jsonString)
-        }
-        
-        var lastError: Error?
-        
-        for attempt in 1...maxRetries {
-            do {
-                print("🔄 OrderAPI: Attempt \(attempt)/\(maxRetries) for \(endpoint)")
-                let (data, response) = try await URLSession.shared.data(for: urlRequest)
-                
-                print("📥 OrderAPI: Received response from \(endpoint):")
-                if let responseString = String(data: data, encoding: .utf8) {
-                    print(responseString)
-                }
-                
-                guard let httpResponse = response as? HTTPURLResponse else {
-                    throw OrderAPIError.networkError("Invalid response")
-                }
-                
-                print("📥 OrderAPI: HTTP Status Code: \(httpResponse.statusCode)")
-                
-                if httpResponse.statusCode < 200 || httpResponse.statusCode >= 300 {
-                    let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown server error"
-                    throw OrderAPIError.serverError("Status \(httpResponse.statusCode): \(errorMessage)")
-                }
-                
-                // Parse the response
-                guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                    throw OrderAPIError.invalidData(responseData: data)
-                }
-                
-                // Check for "id" field (your backend's format)
+        do {
+            // Serialize request body
+            let requestData = try JSONSerialization.data(withJSONObject: modifiedJsonDict)
+            
+            // Send the request through APIClient
+            let data = try await APIClient.shared.request(
+                path: "/schedule-order-placed",
+                method: "POST",
+                body: requestData,
+                headers: ["Content-Type": "application/json"]
+            )
+            
+            // Parse the response to get the order ID using the same logic as sendRequest
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                // Check for "id" field (direct objectId)
                 if let orderId = json["id"] as? String {
-                    print("✅ OrderAPI: Successfully parsed order ID: \(orderId)")
                     return orderId
                 }
                 
-                // Fallback to original logic for other formats
-                if let success = json["success"] as? Bool {
-                    if success, let dataObj = json["data"] as? [String: Any], let orderId = dataObj["orderId"] as? String {
-                        print("✅ OrderAPI: Successfully parsed order ID from data: \(orderId)")
-                        return orderId
-                    } else {
-                        let errorMsg = json["message"] as? String ?? "Unknown server error"
-                        throw OrderAPIError.serverError(errorMsg)
-                    }
-                }
-                
-                // If no "id" or "success", check plain string response
-                if let responseText = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "\"", with: ""),
-                   responseText.count == 24, responseText.range(of: "^[0-9a-f]+$", options: .regularExpression) != nil {
-                    print("✅ OrderAPI: Response is a valid MongoDB ObjectId: \(responseText)")
-                    return responseText
-                }
-                
-                print("❌ OrderAPI: No valid order ID found in response")
-                throw OrderAPIError.invalidData(responseData: data)
-                
-            } catch {
-                lastError = error
-                print("❌ OrderAPI: Attempt \(attempt) failed: \(error.localizedDescription)")
-                
-                let shouldRetry = isRetryableError(error)
-                if shouldRetry && attempt < maxRetries {
-                    let delay = calculateRetryDelay(attempt)
-                    print("⏱️ OrderAPI: Waiting \(delay) seconds before retry...")
-                    try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-                } else {
-                    print("❌ OrderAPI: Non-retryable error, breaking retry loop")
-                    throw error
+                // Check for {"success": true, "data": {"orderId": "..."}} structure
+                if let success = json["success"] as? Bool,
+                   success,
+                   let dataObj = json["data"] as? [String: Any],
+                   let orderId = dataObj["orderId"] as? String {
+                    return orderId
                 }
             }
+            
+            // Check if the response is a plain string (ObjectId)
+            if let responseText = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "\"", with: ""),
+               responseText.count == 24, 
+               responseText.range(of: "^[0-9a-f]+$", options: .regularExpression) != nil {
+                return responseText
+            }
+            
+            throw OrderAPIError.invalidData(responseData: data)
+        } catch let error as APIClient.APIError {
+            print("❌ OrderAPIService: API error: \(error.localizedDescription)")
+            switch error {
+            case .invalidURL:
+                throw OrderAPIError.networkError("Invalid URL")
+            case .serverError(let code, _):
+                throw OrderAPIError.serverError("Status \(code)")
+            case .rateLimited:
+                throw OrderAPIError.networkError("Rate limited")
+            default:
+                throw OrderAPIError.networkError(error.localizedDescription)
+            }
+        } catch {
+            throw OrderAPIError.networkError(error.localizedDescription)
         }
-        
-        throw lastError ?? OrderAPIError.unknown
     }
-    
-    private func isRetryableError(_ error: Error) -> Bool {
-        if let urlError = error as? URLError {
-            return [.timedOut, .notConnectedToInternet, .networkConnectionLost, .cannotConnectToHost].contains(urlError.code)
-        }
-        return false
-    }
-    
-    private func calculateRetryDelay(_ attempt: Int) -> Double {
-        return min(pow(2.0, Double(attempt - 1)), 8) // 1, 2, 4, 8 seconds
-    }
-}
     
     // Helper to validate ISO8601 date format
     func isValidISO8601Date(_ dateString: String) -> Bool {
         let formatter = ISO8601DateFormatter()
         return formatter.date(from: dateString) != nil
     }
+}
 

@@ -89,9 +89,11 @@ struct RestaurantImageView: View {
     @State private var isLoading = false
     @State private var errorMessage: String? = nil
     @State private var useFallback = false
+    @State private var retryCount = 0
     
     private let networkUtils = NetworkUtils.shared
     private let imageCache = ImageCache.shared
+    private let maxRetries = 2
     
     var body: some View {
         Group {
@@ -111,7 +113,7 @@ struct RestaurantImageView: View {
     private var fallbackView: some View {
         ZStack {
             LinearGradient(
-                gradient: Gradient(colors: [Color(hex: "#FF5F6D"), Color(hex: "#FFC371")]),
+                gradient: Gradient(colors: randomGradientColors),
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
@@ -134,21 +136,65 @@ struct RestaurantImageView: View {
                             .foregroundColor(.white)
                     }
                     
-                    if let error = errorMessage, !useFallback {
-                        Text(error)
-                            .font(.caption)
+                    // Show retry button if loading failed
+                    if useFallback && retryCount < maxRetries && !isLoading {
+                        Button {
+                            retryLoadImage()
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "arrow.clockwise")
+                                Text("Retry")
+                            }
+                            .font(.system(size: 12, weight: .medium))
                             .foregroundColor(.white)
-                            .padding(4)
-                            .multilineTextAlignment(.center)
-                            .background(Color.black.opacity(0.6))
-                            .cornerRadius(4)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(RoundedRectangle(cornerRadius: 15).fill(Color.black.opacity(0.3)))
+                        }
+                        .padding(.top, 5)
                     }
                 }
             }
         }
     }
     
-    private func loadImage() {
+    // Random gradient colors based on restaurant name for consistent fallback display
+    private var randomGradientColors: [Color] {
+        // Use restaurant name or ID as a seed for consistent gradient
+        let seed = (name ?? photoId ?? "default").hash
+        var random = Random(seed: UInt64(abs(seed)))
+        
+        // Predefined gradients for restaurants
+        let gradients: [[Color]] = [
+            [Color(hex: "#FF5F6D"), Color(hex: "#FFC371")],
+            [Color(hex: "#11998e"), Color(hex: "#38ef7d")],
+            [Color(hex: "#FC5C7D"), Color(hex: "#6A82FB")],
+            [Color(hex: "#FFAFBD"), Color(hex: "#ffc3a0")],
+            [Color(hex: "#2193b0"), Color(hex: "#6dd5ed")],
+            [Color(hex: "#C33764"), Color(hex: "#1D2671")],
+            [Color(hex: "#ee9ca7"), Color(hex: "#ffdde1")],
+            [Color(hex: "#ED213A"), Color(hex: "#93291E")],
+            [Color(hex: "#FFC837"), Color(hex: "#FF8008")],
+            [Color(hex: "#4E65FF"), Color(hex: "#92EFFD")]
+        ]
+        
+        let index = Int(random.next() % UInt64(gradients.count))
+        return gradients[index]
+    }
+    
+    private func retryLoadImage() {
+        guard retryCount < maxRetries else { return }
+        
+        retryCount += 1
+        isLoading = true
+        
+        Task {
+            await Task.sleep(UInt64(0.5 * 1_000_000_000))
+            await loadImage(forceRetry: true)
+        }
+    }
+    
+    private func loadImage(forceRetry: Bool = false) {
         guard let photoId = photoId, !photoId.isEmpty else {
             useFallback = true
             
@@ -160,7 +206,7 @@ struct RestaurantImageView: View {
         }
         
         // Check if image is in cache
-        if let cachedImage = imageCache.getImage(forKey: "restaurant_\(photoId)") {
+        if !forceRetry, let cachedImage = imageCache.getImage(forKey: "restaurant_\(photoId)") {
             print("Using cached restaurant image for ID: \(photoId)")
             self.image = cachedImage
             self.useFallback = false
@@ -200,6 +246,23 @@ struct RestaurantImageView: View {
     }
 }
 
+// Simple pseudorandom generator for consistent random values when provided the same seed
+struct Random {
+    private var seed: UInt64
+    
+    init(seed: UInt64) {
+        self.seed = seed
+    }
+    
+    mutating func next() -> UInt64 {
+        // XORShift algorithm for pseudorandom generation
+        seed ^= seed << 13
+        seed ^= seed >> 7
+        seed ^= seed << 17
+        return seed
+    }
+}
+
 struct ProductImageView: View {
     var photoId: String?
     var name: String?
@@ -209,9 +272,11 @@ struct ProductImageView: View {
     @State private var isLoading = false
     @State private var errorMessage: String? = nil
     @State private var useFallback = false
+    @State private var retryCount = 0
     
     private let networkUtils = NetworkUtils.shared
     private let imageCache = ImageCache.shared
+    private let maxRetries = 2
     
     var body: some View {
         ZStack {
@@ -234,11 +299,8 @@ struct ProductImageView: View {
     
     private var fallbackView: some View {
         ZStack {
-            LinearGradient(
-                gradient: Gradient(colors: [Color(hex: "#4E65FF"), Color(hex: "#92EFFD")]),
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
+            // Background gradient that varies by category
+            categoryGradient
             
             VStack(spacing: 8) {
                 // Food icon based on category
@@ -255,8 +317,66 @@ struct ProductImageView: View {
                         .padding(.horizontal, 12)
                         .lineLimit(2)
                 }
+                
+                // Show retry button if loading failed
+                if useFallback && retryCount < maxRetries && !isLoading {
+                    Button {
+                        retryLoadImage()
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 12))
+                            .foregroundColor(.white)
+                            .padding(5)
+                            .background(Circle().fill(Color.black.opacity(0.3)))
+                    }
+                    .padding(.top, 5)
+                }
+                
+                if isLoading {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                        .scaleEffect(0.8)
+                }
             }
         }
+    }
+    
+    // Category-specific gradient for fallback
+    private var categoryGradient: some View {
+        let gradientColors: [Color]
+        
+        if let category = category?.lowercased() {
+            switch true {
+            case category.contains("pizza"):
+                gradientColors = [Color(hex: "#FF5E62"), Color(hex: "#FF9966")]
+            case category.contains("burger"):
+                gradientColors = [Color(hex: "#FF9966"), Color(hex: "#FF5E62")]
+            case category.contains("dessert"), category.contains("sweet"):
+                gradientColors = [Color(hex: "#FF7080"), Color(hex: "#FFA8D4")]
+            case category.contains("drink"), category.contains("beverage"):
+                gradientColors = [Color(hex: "#4E65FF"), Color(hex: "#92EFFD")]
+            case category.contains("breakfast"):
+                gradientColors = [Color(hex: "#FFC837"), Color(hex: "#FF8008")]
+            case category.contains("lunch"):
+                gradientColors = [Color(hex: "#1D976C"), Color(hex: "#93F9B9")]
+            case category.contains("veg"), category.contains("vegetarian"):
+                gradientColors = [Color(hex: "#56AB2F"), Color(hex: "#A8E063")]
+            case category.contains("non-veg"), category.contains("meat"):
+                gradientColors = [Color(hex: "#CB356B"), Color(hex: "#BD3F32")]
+            case category.contains("indian"), category.contains("north indian"):
+                gradientColors = [Color(hex: "#FF7E5F"), Color(hex: "#FEB47B")]
+            default:
+                gradientColors = [Color(hex: "#4E65FF"), Color(hex: "#92EFFD")]
+            }
+        } else {
+            gradientColors = [Color(hex: "#4E65FF"), Color(hex: "#92EFFD")]
+        }
+        
+        return LinearGradient(
+            gradient: Gradient(colors: gradientColors),
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
     }
     
     // Returns a system icon name based on the food category
@@ -284,7 +404,19 @@ struct ProductImageView: View {
         }
     }
     
-    private func loadImage() {
+    private func retryLoadImage() {
+        guard retryCount < maxRetries else { return }
+        
+        retryCount += 1
+        isLoading = true
+        
+        Task {
+            await Task.sleep(UInt64(0.5 * 1_000_000_000))
+            await loadImage(forceRetry: true)
+        }
+    }
+    
+    private func loadImage(forceRetry: Bool = false) {
         guard let photoId = photoId, !photoId.isEmpty else {
             useFallback = true
             
@@ -296,7 +428,7 @@ struct ProductImageView: View {
         }
         
         // Check if image is in cache
-        if let cachedImage = imageCache.getImage(forKey: "product_\(photoId)") {
+        if !forceRetry, let cachedImage = imageCache.getImage(forKey: "product_\(photoId)") {
             print("Using cached product image for ID: \(photoId)")
             self.image = cachedImage
             self.useFallback = false
