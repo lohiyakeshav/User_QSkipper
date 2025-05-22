@@ -3,7 +3,7 @@ import Foundation
 /// Centralized definitions of all API endpoints
 struct APIEndpoints {
     // Base paths
-    static let baseRenderURL = "https://qskipperbackend.onrender.com"
+    static let baseRenderURL = "https://qskipper-server-2ul5.onrender.com"
     static let baseRailwayURL = "https://qskipperserver-production.up.railway.app"
     
     // Authentication

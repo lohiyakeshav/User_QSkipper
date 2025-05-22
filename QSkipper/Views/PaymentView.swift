@@ -570,7 +570,7 @@
 //            let endpoint = isScheduledOrder ? "/schedule-order-placed" : "/order-placed"
 //            print("🔍 PaymentView: Testing endpoint: \(endpoint)")
 //            
-//            let url = URL(string: "https://qskipperbackend.onrender.com\(endpoint)")!
+//            let url = URL(string: "https://qskipper-server-2ul5.onrender.com\(endpoint)")!
 //            var request = URLRequest(url: url)
 //            request.httpMethod = "OPTIONS"  // Use OPTIONS to check if endpoint exists without sending data
 //            request.timeoutInterval = 10

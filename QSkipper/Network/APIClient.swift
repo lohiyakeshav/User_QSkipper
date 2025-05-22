@@ -43,7 +43,7 @@ class APIClient {
     static let shared = APIClient()
     
     // Primary and secondary base URLs
-    private let renderBaseURL = URL(string: "https://qskipperbackend.onrender.com")!  // Primary (free tier)
+    private let renderBaseURL = URL(string: "https://qskipper-server-2ul5.onrender.com")!  // Primary (free tier)
     private let railwayBaseURL = URL(string: "https://qskipperserver-production.up.railway.app")! // Secondary
     
     // Rate limiting

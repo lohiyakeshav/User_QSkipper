@@ -164,18 +164,18 @@ struct RestaurantDetailView: View {
     
     private var restaurantDetailRow: some View {
         HStack(spacing: 20) {
-            // Free Delivery Tag
+            // Free Pickup Tag
             HStack(spacing: 5) {
                 Image(systemName: "indianrupeesign")
                     .foregroundColor(AppColors.primaryGreen)
                     .font(.system(size: 13))
                 
-                Text("Free Delivery")
+                Text("Free Pickup")
                     .font(.system(size: 14))
                     .foregroundColor(.gray)
             }
             
-            // Delivery Time - Use viewModel.restaurant if available
+            // Pickup Time - Use viewModel.restaurant if available
             HStack(spacing: 5) {
                 Image(systemName: "clock")
                     .foregroundColor(AppColors.primaryGreen)

@@ -167,8 +167,8 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         return distance <= 2000
     }
     
-    // Check if food delivery service is available at the current location
-    func isDeliveryServiceAvailable() -> Bool {
+    // Check if food pickup service is available at the current location
+    func isPickupServiceAvailable() -> Bool {
         guard let location = self.location else {
             return false
         }

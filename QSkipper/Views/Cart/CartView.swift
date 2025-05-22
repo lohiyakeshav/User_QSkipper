@@ -248,7 +248,7 @@ struct CartContentView: View {
                                 controller: controller,
                                 presentationMode: presentationMode
                             )
-                            DeliveryOptionsView(controller: controller)
+                            PickupOptionsView(controller: controller)
                             
                             if let restaurant = controller.restaurant {
                                 RestaurantDetailsView(restaurant: restaurant, controller: controller)
@@ -363,13 +363,13 @@ struct OrderTypeSelectionView: View {
     @ObservedObject var controller: CartViewController
     
     var body: some View {
-        // Empty view since the Pack my order is now moved to DeliveryOptionsView
+        // Empty view since the Pack my order is now moved to PickupOptionsView
         EmptyView()
     }
 }
 
-// MARK: - Delivery Options
-struct DeliveryOptionsView: View {
+// MARK: - Pickup Options
+struct PickupOptionsView: View {
     @ObservedObject var controller: CartViewController
     @State private var packMyOrder: Bool = false
     

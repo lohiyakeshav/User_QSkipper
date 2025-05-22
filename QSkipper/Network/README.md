@@ -82,7 +82,7 @@ do {
 
 ## Implementation Details
 
-- Primary server: `https://qskipperbackend.onrender.com`
+- Primary server: `https://qskipper-server-2ul5.onrender.com`
 - Secondary server: `https://qskipperserver-production.up.railway.app`
 - Rate limit: Maximum 1 request per endpoint every 30 seconds
 - Retry mechanism: Exponential backoff (1s, 2s, 4s, 8s) with up to 3 retries

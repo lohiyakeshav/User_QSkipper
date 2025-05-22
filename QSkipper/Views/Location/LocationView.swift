@@ -49,9 +49,9 @@ struct LocationView: View {
                         }
                     }
                 
-                // Map overlay showing delivery availability
+                // Map overlay showing pickup availability
                 VStack {
-                    if locationManager.isDeliveryServiceAvailable() {
+                    if locationManager.isPickupServiceAvailable() {
                         Text("Food ordering is available near \(locationManager.locationName)")
                             .font(AppFonts.caption)
                             .foregroundColor(.white)

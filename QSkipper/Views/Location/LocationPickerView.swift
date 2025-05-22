@@ -81,8 +81,8 @@ struct LocationPickerView: View {
                         .background(Circle().fill(Color.white).frame(width: 20, height: 20))
                         .offset(y: -15)
                     
-                    if locationManager.isDeliveryServiceAvailable() {
-                        Text("Delivery available")
+                    if locationManager.isPickupServiceAvailable() {
+                        Text("Pickup available")
                             .font(AppFonts.caption)
                             .foregroundColor(.white)
                             .padding(.horizontal, 12)
@@ -90,7 +90,7 @@ struct LocationPickerView: View {
                             .background(AppColors.primaryGreen)
                             .cornerRadius(15)
                     } else {
-                        Text("Delivery not available")
+                        Text("Pickup not available")
                             .font(AppFonts.caption)
                             .foregroundColor(.white)
                             .padding(.horizontal, 12)

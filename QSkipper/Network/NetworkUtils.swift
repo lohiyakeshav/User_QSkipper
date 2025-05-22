@@ -12,7 +12,7 @@ import SwiftUI // For accessing our app's Utils folder
 // NetworkUtils for handling common network operations
 class NetworkUtils {
     // Base URL for API endpoints
-    let baseURl = URL(string: "https://qskipperbackend.onrender.com/")!
+    let baseURl = URL(string: "https://qskipper-server-2ul5.onrender.com/")!
     
     static let shared = NetworkUtils()
     
@@ -474,7 +474,7 @@ class NetworkUtils {
 //    static let shared = PaymentAPI()
 //    private init() {}
 //
-//    private let baseURL = URL(string: "https://qskipperbackend.onrender.com")!
+//    private let baseURL = URL(string: "https://qskipper-server-2ul5.onrender.com")!
 //
 //    func verifyOrder(orderId: String) async throws {
 //        let url = baseURL.appendingPathComponent("verify-order")
@@ -554,7 +554,7 @@ enum NetworkError: Error {
 }
 
 struct NetworkUtilsEndpoints {
-    static let baseURL = "https://qskipperbackend.onrender.com"
+    static let baseURL = "https://qskipper-server-2ul5.onrender.com"
     static let verifyOrder = "\(baseURL)/verify-order"
     
     // Authentication endpoints

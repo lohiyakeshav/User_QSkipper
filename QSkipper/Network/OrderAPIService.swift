@@ -122,7 +122,7 @@ class OrderAPIService {
             // Create a mock HTTPURLResponse since we can't construct it directly
             // This is needed for backward compatibility
             let response = HTTPURLResponse(
-                url: URL(string: "https://qskipperbackend.onrender.com/verify-order")!,
+                url: URL(string: "https://qskipper-server-2ul5.onrender.com/verify-order")!,
                 statusCode: 200,
                 httpVersion: "HTTP/1.1",
                 headerFields: ["Content-Type": "application/json"]
@@ -139,7 +139,7 @@ class OrderAPIService {
             
             if case .serverError(let code, _) = error {
                 let response = HTTPURLResponse(
-                    url: URL(string: "https://qskipperbackend.onrender.com/verify-order")!,
+                    url: URL(string: "https://qskipper-server-2ul5.onrender.com/verify-order")!,
                     statusCode: code,
                     httpVersion: "HTTP/1.1",
                     headerFields: ["Content-Type": "application/json"]

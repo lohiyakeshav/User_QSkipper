@@ -528,7 +528,7 @@ struct OrderCard: View {
     }
     
     private func isCurrentlyDelivering(order: UserOrder) -> Bool {
-        // In a real app, this would check if the order is currently out for delivery
+        // In a real app, this would check if the order is currently out for pickup
         // For now, we'll just return false
         return false
     }

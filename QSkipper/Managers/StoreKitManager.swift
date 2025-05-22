@@ -122,8 +122,7 @@ class StoreKitManager: ObservableObject {
                         throw StoreKitError.verificationFailed
                     }
                     
-                    // Finish the transaction to inform StoreKit that delivery was completed
-                    // This is crucial for consumable purchases to be purchasable again
+                    // Finish the transaction to inform StoreKit that pickup was completed
                     await transaction.finish()
                     print("✅ StoreKitManager: Transaction marked as finished")
                     
