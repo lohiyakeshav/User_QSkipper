@@ -8,9 +8,34 @@ class RestaurantDetailViewModel: ObservableObject {
     @Published var errorMessage: String? = nil
     @Published var restaurant: Restaurant? = nil
     
+    // Cache to store products by restaurant ID
+    private var productCache: [String: [Product]] = [:]
+    
+    // Keep track of in-progress loads to prevent duplicate requests
+    private var activeLoads: [String: Bool] = [:]
+    
+    // Last time we loaded data for a particular restaurant
+    private var lastLoadTimes: [String: Date] = [:]
+    private let minLoadInterval: TimeInterval = 30 // 30 seconds cooldown
+    
     private let networkUtils = NetworkUtils.shared
     
     func loadRestaurant(id: String) {
+        // Prevent duplicate loading
+        guard !isLoading else {
+            print("⚠️ Already loading restaurant, skipping request")
+            return
+        }
+        
+        // Check if we recently loaded this restaurant (to prevent duplicate calls)
+        if let lastLoadTime = lastLoadTimes[id] {
+            let elapsed = Date().timeIntervalSince(lastLoadTime)
+            if elapsed < minLoadInterval {
+                print("⏱️ Recently loaded restaurant \(id), skipping request. Try again in \(Int(minLoadInterval - elapsed))s")
+                return
+            }
+        }
+        
         isLoading = true
         errorMessage = nil
         
@@ -22,6 +47,7 @@ class RestaurantDetailViewModel: ObservableObject {
                 await MainActor.run {
                     self.restaurant = fetchedRestaurant
                     self.isLoading = false
+                    self.lastLoadTimes[id] = Date()
                     print("✅ Loaded restaurant: \(fetchedRestaurant.name)")
                 }
             } catch {
@@ -35,11 +61,45 @@ class RestaurantDetailViewModel: ObservableObject {
     }
     
     func loadProducts(for restaurantId: String) {
+        // Prevent duplicate loading of the same restaurant's products
+        if activeLoads[restaurantId] == true {
+            print("⚠️ RESTAURANT DETAIL: Already loading products for \(restaurantId), skipping duplicate request")
+            return
+        }
+        
+        // Check if we recently loaded products for this restaurant (to prevent rapid repeated calls)
+        if let lastLoadTime = lastLoadTimes[restaurantId] {
+            let elapsed = Date().timeIntervalSince(lastLoadTime)
+            if elapsed < minLoadInterval {
+                print("⏱️ RESTAURANT DETAIL: Recently loaded products for \(restaurantId), skipping request. Try again in \(Int(minLoadInterval - elapsed))s")
+                return
+            }
+        }
+        
         isLoading = true
+        activeLoads[restaurantId] = true
         errorMessage = nil
         
         print("📱 RESTAURANT DETAIL: Starting product load for restaurant ID: \(restaurantId)")
         print("⏱️ Time: \(Date().formatted(date: .abbreviated, time: .standard))")
+        
+        // Check if we have cached products for this restaurant
+        if let cachedProducts = productCache[restaurantId], !cachedProducts.isEmpty {
+            print("🔍 RESTAURANT DETAIL: Using cached products for restaurant ID: \(restaurantId)")
+            
+            Task {
+                await MainActor.run {
+                    self.products = cachedProducts
+                    self.extractCategories()
+                    self.isLoading = false
+                    self.activeLoads[restaurantId] = false
+                    self.lastLoadTimes[restaurantId] = Date()
+                    print("✅ RESTAURANT DETAIL: Loaded \(cachedProducts.count) products from cache")
+                    print("📋 Categories: \(self.categories.joined(separator: ", "))")
+                }
+            }
+            return
+        }
         
         Task {
             do {
@@ -85,8 +145,14 @@ class RestaurantDetailViewModel: ObservableObject {
                 
                 await MainActor.run {
                     self.products = fetchedProducts
+                    
+                    // Store in cache for future use
+                    self.productCache[restaurantId] = fetchedProducts
+                    
                     self.extractCategories()
                     self.isLoading = false
+                    self.activeLoads[restaurantId] = false
+                    self.lastLoadTimes[restaurantId] = Date()
                     
                     // Debug: Print final products after fixing
                     print("✅ RESTAURANT DETAIL: Final \(self.products.count) products:")
@@ -107,6 +173,7 @@ class RestaurantDetailViewModel: ObservableObject {
                 await MainActor.run {
                     self.errorMessage = "Failed to load products: \(error.localizedDescription)"
                     self.isLoading = false
+                    self.activeLoads[restaurantId] = false
                     print("❌ RESTAURANT DETAIL: Error loading products: \(error)")
                 }
             }
@@ -125,4 +192,26 @@ class RestaurantDetailViewModel: ObservableObject {
         // Convert to array and sort
         self.categories = Array(uniqueCategories).sorted()
     }
-} 
+    
+    // Add method to set restaurant directly from preloaded data
+    func setRestaurant(_ restaurant: Restaurant) {
+        self.restaurant = restaurant
+        print("✅ Updated restaurant in ViewModel with preloaded data: \(restaurant.name)")
+    }
+    
+    // Add method to clear cache
+    func clearCache() {
+        print("🧹 RESTAURANT DETAIL: Clearing product cache")
+        productCache.removeAll()
+        lastLoadTimes.removeAll()
+        activeLoads.removeAll()
+    }
+    
+    // Clear cache for specific restaurant
+    func clearCache(for restaurantId: String) {
+        print("🧹 RESTAURANT DETAIL: Clearing cache for restaurant ID: \(restaurantId)")
+        productCache[restaurantId] = nil
+        lastLoadTimes[restaurantId] = nil
+        activeLoads[restaurantId] = nil
+    }
+}

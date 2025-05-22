@@ -1,5 +1,7 @@
 import SwiftUI
 
+// ServerConfig is imported automatically since it's in the same module
+
 struct OrdersView: View {
     @StateObject private var viewModel = OrdersViewModel()
     
@@ -102,7 +104,7 @@ class OrdersViewModel: ObservableObject {
             // Here you would make the API call to fetch orders
             // For now, we'll just print that we're ready to fetch
             print("🔄 Ready to fetch orders from API")
-            print("GET http://localhost:3000/orders")
+            print("GET \(ServerConfig.primaryBaseURL)/orders")
             
             // Get auth token from UserDefaults
             if let userId = UserDefaultsManager.shared.getUserId() {

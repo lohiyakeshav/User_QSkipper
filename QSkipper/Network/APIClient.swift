@@ -1,6 +1,8 @@
 import Foundation
 import UIKit
 
+// ServerConfig is imported automatically since it's in the same module
+
 // Model for decoding Top Picks response
 struct TopPicksResponse: Codable {
     let products: [Product]
@@ -42,9 +44,9 @@ struct TopPicksResponse: Codable {
 class APIClient {
     static let shared = APIClient()
     
-    // Primary and secondary base URLs
-    private let renderBaseURL = URL(string: "https://qskipper-server-2ul5.onrender.com")!  // Primary (free tier)
-    private let railwayBaseURL = URL(string: "https://qskipperserver-production.up.railway.app")! // Secondary
+    // Primary and secondary base URLs from ServerConfig
+    private let renderBaseURL: URL
+    private let railwayBaseURL: URL
     
     // Rate limiting
     private var lastRequestTime: [String: Date] = [:]
@@ -52,6 +54,8 @@ class APIClient {
     private let maxQueuedRequestsPerEndpoint = 3
     // Dictionary to track queued requests by endpoint
     private var queuedRequestsByEndpoint: [String: Int] = [:]
+    // Track initial loads to bypass rate limiting
+    private var initialLoadCompleted: [String: Bool] = [:]
     
     // Increased rate limit for better performance
     private var minRequestInterval: TimeInterval {
@@ -68,12 +72,24 @@ class APIClient {
         } else if path.contains("get_All_Restaurant") {
             return 90 // 1.5 minutes for restaurants endpoint
         } else if path.contains("get_Restaurant/") {
-            return 15 // 15 seconds for individual restaurant endpoints
+            return 60 // 60 seconds for individual restaurant endpoints
         } else if path.contains("get-UserOrder") {
             return 5 // Reduced to 5 seconds for user orders to avoid excessive rate limiting
         } else {
             return minRequestInterval // Default interval for other endpoints
         }
+    }
+    
+    // Check if rate limiting should be applied, or if this is the first data load
+    private func shouldApplyRateLimit(for path: String) -> Bool {
+        // If this is the first request for this path, allow it without rate limiting
+        if initialLoadCompleted[path] == nil {
+            // Mark as completed for future requests
+            initialLoadCompleted[path] = true
+            print("🔑 First-time load for \(path) - bypassing rate limiter")
+            return false
+        }
+        return true
     }
     
     // Special function for user orders - always uses railway server directly and bypasses rate limiting
@@ -121,6 +137,10 @@ class APIClient {
             return 600 // 10 minutes for top-picks endpoint
         } else if path.contains("get_All_Restaurant") {
             return 300 // 5 minutes for restaurants endpoint
+        } else if path.contains("get_Restaurant/") {
+            return 180 // 3 minutes for individual restaurant details
+        } else if path.contains("get_all_product/") {
+            return 180 // 3 minutes for restaurant menu items
         } else {
             return 120 // 2 minutes for other endpoints
         }
@@ -138,6 +158,10 @@ class APIClient {
     private var pendingRequests: [(perform: () async throws -> Data, completion: (Result<Data, Error>) -> Void)] = []
     
     private init() {
+        // Initialize URLs from ServerConfig
+        self.renderBaseURL = URL(string: ServerConfig.renderBaseURL)!
+        self.railwayBaseURL = URL(string: ServerConfig.railwayBaseURL)!
+        
         print("🚀 APIClient initialized with primary: \(renderBaseURL.absoluteString)")
         print("🚀 Fallback URL: \(railwayBaseURL.absoluteString)")
     }
@@ -204,8 +228,8 @@ class APIClient {
             Task(priority: .userInitiated) {
                 // Add request to queue
                 let requestTask: () async throws -> Data = {
-                    // Check rate limiting (unless forced)
-                    if !forceRequest {
+                    // Check rate limiting (unless forced or first load)
+                    if !forceRequest && self.shouldApplyRateLimit(for: path) {
                         // Use the serial queue to safely read from lastRequestTime
                         let shouldRateLimit = self.requestTimeQueue.sync { () -> Bool in
                             if let lastTime = self.lastRequestTime[path] {

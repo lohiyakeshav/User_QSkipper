@@ -8,13 +8,19 @@
 import Foundation
 import UIKit
 import SwiftUI // For accessing our app's Utils folder
+// ServerConfig is imported automatically since it's in the same module
 
 // NetworkUtils for handling common network operations
 class NetworkUtils {
-    // Base URL for API endpoints
-    let baseURl = URL(string: "https://qskipper-server-2ul5.onrender.com/")!
+    // Base URL for API endpoints - now using ServerConfig
+    let baseURl: URL
     
     static let shared = NetworkUtils()
+    
+    init() {
+        // Initialize with the primary URL from ServerConfig
+        self.baseURl = URL(string: ServerConfig.primaryBaseURLWithSlash)!
+    }
     
     enum NetworkUtilsError: Error, LocalizedError {
         case RestaurantNotFound
@@ -554,7 +560,8 @@ enum NetworkError: Error {
 }
 
 struct NetworkUtilsEndpoints {
-    static let baseURL = "https://qskipper-server-2ul5.onrender.com"
+    // Use the centralized ServerConfig
+    static let baseURL = ServerConfig.primaryBaseURL
     static let verifyOrder = "\(baseURL)/verify-order"
     
     // Authentication endpoints
@@ -593,7 +600,7 @@ struct NetworkUtilsEndpoints {
     }
     
     // Railway server URL for backup and high-throughput endpoints
-    static let railwayBaseURL = "https://qskipperserver-production.up.railway.app"
+    static let railwayBaseURL = ServerConfig.railwayBaseURL
 }
 
 class NetworkManager {

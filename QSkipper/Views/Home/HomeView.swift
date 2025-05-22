@@ -79,7 +79,59 @@ class HomeViewModel: ObservableObject {
     // Cache and cooldown management
     private var lastTopPicksRefreshTime: TimeInterval = 0
     private var lastRestaurantsRefreshTime: TimeInterval = 0
-    private let cooldownPeriod: TimeInterval = 30 // 30 seconds cooldown
+    private let cooldownPeriod: TimeInterval = 60 // 60 seconds cooldown
+    
+    // Keep track of restaurant detail requests to avoid duplicates
+    private var lastRestaurantDetailRequests: [String: TimeInterval] = [:]
+    private let restaurantDetailCooldown: TimeInterval = 120 // 2 minutes between detail requests
+    
+    // Store restaurant details to avoid repeated API calls
+    private var restaurantDetailsCache: [String: Restaurant] = [:]
+    private var pendingRestaurantRequests: Set<String> = []
+    
+    // Helper method to batch process restaurant details
+    func prefetchRestaurantDetails(for productList: [Product]) async {
+        let restaurantIds = Set(productList.map { $0.restaurantId })
+        let newRestaurantIds = restaurantIds.filter { 
+            restaurantDetailsCache[$0] == nil && !pendingRestaurantRequests.contains($0)
+        }
+        
+        guard !newRestaurantIds.isEmpty else { return }
+        
+        // Mark all as pending to prevent duplicate requests
+        for id in newRestaurantIds {
+            pendingRestaurantRequests.insert(id)
+        }
+        
+        print("🔍 Prefetching details for \(newRestaurantIds.count) restaurants")
+        
+        // Process restaurant details sequentially with delay to avoid overwhelming server
+        for id in newRestaurantIds {
+            do {
+                // Skip if we already have the restaurant in main list with good data
+                if let existingRestaurant = restaurants.first(where: { $0.id == id }), 
+                   existingRestaurant.name != "Restaurant" {
+                    restaurantDetailsCache[id] = existingRestaurant
+                    continue
+                }
+                
+                // Only make API call if we should fetch this restaurant
+                if shouldFetchRestaurantDetails(forId: id) {
+                    let restaurant = try await networkUtils.fetchRestaurant(with: id)
+                    await MainActor.run {
+                        restaurantDetailsCache[id] = restaurant
+                    }
+                    // Add a small delay between requests
+                    try? await Task.sleep(nanoseconds: 300_000_000) // 300ms
+                }
+            } catch {
+                print("⚠️ Failed to fetch restaurant \(id): \(error.localizedDescription)")
+            }
+            
+            // Remove from pending regardless of success/failure
+            pendingRestaurantRequests.remove(id)
+        }
+    }
     
     // Load all restaurants
     @MainActor
@@ -88,6 +140,12 @@ class HomeViewModel: ObservableObject {
         let now = Date().timeIntervalSince1970
         if now - lastRestaurantsRefreshTime < cooldownPeriod && !restaurants.isEmpty {
             print("⏱️ Restaurant refresh cooldown active. Using cached data. Next refresh available in \(Int(cooldownPeriod - (now - lastRestaurantsRefreshTime)))s")
+            return
+        }
+        
+        // Prevent concurrent restaurant loads
+        if isLoading {
+            print("⚠️ Already loading restaurants, skipping duplicate request")
             return
         }
         
@@ -101,6 +159,11 @@ class HomeViewModel: ObservableObject {
             
             print("✅ Successfully loaded \(fetchedRestaurants.count) restaurants")
             self.restaurants = fetchedRestaurants
+            
+            // Update cache with fetched restaurants
+            for restaurant in fetchedRestaurants {
+                restaurantDetailsCache[restaurant.id] = restaurant
+            }
             
             // Extract cuisines after loading restaurants
             extractCuisines()
@@ -152,6 +215,13 @@ class HomeViewModel: ObservableObject {
             print("📡 HomeViewModel: Fetching top picks from network")
             let fetchedTopPicks = try await networkUtils.fetchTopPicks()
             
+            // Prefetch restaurant details for top picks to avoid redundant calls
+            if !fetchedTopPicks.isEmpty {
+                Task {
+                    await prefetchRestaurantDetails(for: fetchedTopPicks)
+                }
+            }
+            
             await MainActor.run {
                 print("✅ HomeViewModel: Successfully loaded \(fetchedTopPicks.count) top picks")
                 
@@ -190,9 +260,34 @@ class HomeViewModel: ObservableObject {
     
     // Helper method to find the restaurant a product belongs to
     func getRestaurantForProduct(_ product: Product) -> Restaurant {
-        // Try to find the restaurant by ID
+        // First check cached restaurant details
+        if let cachedRestaurant = restaurantDetailsCache[product.restaurantId] {
+            return cachedRestaurant
+        }
+        
+        // Next try to find the restaurant in the main list
         if let restaurant = restaurants.first(where: { $0.id == product.restaurantId }) {
+            // Cache for future use
+            restaurantDetailsCache[product.restaurantId] = restaurant
             return restaurant
+        }
+        
+        // If not found, trigger a background fetch if not already pending
+        if !pendingRestaurantRequests.contains(product.restaurantId) && 
+           shouldFetchRestaurantDetails(forId: product.restaurantId) {
+            Task {
+                do {
+                    pendingRestaurantRequests.insert(product.restaurantId)
+                    let restaurant = try await networkUtils.fetchRestaurant(with: product.restaurantId)
+                    await MainActor.run {
+                        restaurantDetailsCache[product.restaurantId] = restaurant
+                    }
+                    pendingRestaurantRequests.remove(product.restaurantId)
+                } catch {
+                    print("⚠️ Failed to fetch restaurant \(product.restaurantId): \(error.localizedDescription)")
+                    pendingRestaurantRequests.remove(product.restaurantId)
+                }
+            }
         }
         
         // If not found, create a fallback restaurant object with minimal info
@@ -205,6 +300,21 @@ class HomeViewModel: ObservableObject {
             rating: product.rating,
             location: "Unknown location"
         )
+    }
+    
+    // ADDED: Check if we should fetch restaurant details
+    func shouldFetchRestaurantDetails(forId restaurantId: String) -> Bool {
+        let now = Date().timeIntervalSince1970
+        if let lastRequestTime = lastRestaurantDetailRequests[restaurantId] {
+            let timeElapsed = now - lastRequestTime
+            if timeElapsed < restaurantDetailCooldown {
+                print("⏱️ Restaurant detail cooldown for \(restaurantId). Next fetch in \(Int(restaurantDetailCooldown - timeElapsed))s")
+                return false
+            }
+        }
+        
+        lastRestaurantDetailRequests[restaurantId] = now
+        return true
     }
 }
 
@@ -223,9 +333,20 @@ struct HomeView: View {
     @State private var isSearching = false
     @State private var isPullingToRefresh = false
     @State private var lastRefreshActionTime = Date().timeIntervalSince1970 - 60
+    @State private var initialLoadStarted = false // Track if initial load has started
     @FocusState private var isSearchFieldFocused: Bool
     
     private let minRefreshInterval: TimeInterval = 30
+    
+    // Initializer to set initial loading states
+    init() {
+        let viewModel = HomeViewModel()
+        viewModel.isLoading = true
+        viewModel.isLoadingTopPicks = true
+        
+        // Use underscore to set the StateObject's wrapped value directly
+        self._viewModel = StateObject(wrappedValue: viewModel)
+    }
     
     var filteredRestaurants: [Restaurant] {
         var result = viewModel.restaurants
@@ -251,6 +372,15 @@ struct HomeView: View {
                 case .home:
                     homeContent
                         .navigationBarHidden(true)
+                        .onAppear {
+                            // Set loading indicators and start data fetch on first appearance
+                            if !initialLoadStarted {
+                                viewModel.isLoading = true
+                                viewModel.isLoadingTopPicks = true
+                                initialLoadStarted = true
+                                loadData()
+                            }
+                        }
                 case .favorites:
                     FavoritesView()
                         .environmentObject(favoriteManager)
@@ -423,6 +553,12 @@ struct HomeView: View {
     
     private func loadData() {
         Task {
+            // Set loading indicators first
+            await MainActor.run {
+                viewModel.isLoading = true
+                viewModel.isLoadingTopPicks = true
+            }
+            
             // Check if we should debounce this refresh action
             let currentTime = Date().timeIntervalSince1970
             if currentTime - lastRefreshActionTime < minRefreshInterval {
@@ -430,54 +566,84 @@ struct HomeView: View {
                 return
             }
             
-            // Update the last refresh time
+            // Update the last refresh time BEFORE making any API calls
             await MainActor.run {
                 lastRefreshActionTime = currentTime
             }
             
             print("🔄 Loading initial data")
             
-            // Check if preloaded data is available - safely access on MainActor
-            let hasPreloadedTopPicks = await MainActor.run {
-                return !preloadManager.topPicks.isEmpty
-            }
+            // Start loading both data types in parallel for faster initial load
+            async let topPicksTask = loadTopPicksData()
+            async let restaurantsTask = loadRestaurantsData()
             
-            if hasPreloadedTopPicks {
-                await MainActor.run {
-                    print("✅ Using preloaded top picks: \(preloadManager.topPicks.count) items")
-                    viewModel.topPicks = preloadManager.topPicks
-                }
-            } else {
-                // Load top picks first
-                print("🔄 Starting top picks load")
-                await viewModel.loadTopPicks()
-                print("✅ Top picks load completed")
+            // Wait for both tasks to complete
+            _ = await (topPicksTask, restaurantsTask)
+        }
+    }
+    
+    // Helper method to load top picks
+    private func loadTopPicksData() async {
+        // Check if preloaded data is available - safely access on MainActor
+        let hasPreloadedTopPicks = await MainActor.run {
+            return !preloadManager.topPicks.isEmpty
+        }
+        
+        // OPTIMIZATION: Check if we already have top picks loaded in our ViewModel
+        let alreadyHasTopPicks = await MainActor.run {
+            return !viewModel.topPicks.isEmpty
+        }
+        
+        // TOP PICKS LOADING
+        if hasPreloadedTopPicks && !alreadyHasTopPicks {
+            await MainActor.run {
+                print("✅ Using preloaded top picks: \(preloadManager.topPicks.count) items")
+                viewModel.topPicks = preloadManager.topPicks
+                viewModel.isLoadingTopPicks = false
             }
-            
-            // Check if preloaded restaurants are available - safely access on MainActor
-            let hasPreloadedRestaurants = await MainActor.run {
-                return !preloadManager.restaurants.isEmpty
+        } else if !alreadyHasTopPicks {
+            // Only load if absolutely necessary and we don't already have data
+            print("🔄 Loading top picks from network (no preloaded or existing data)")
+            await viewModel.loadTopPicks()
+        } else {
+            await MainActor.run {
+                viewModel.isLoadingTopPicks = false
             }
-            
-            if hasPreloadedRestaurants {
-                await MainActor.run {
-                    print("✅ Using preloaded restaurants: \(preloadManager.restaurants.count) items")
-                    viewModel.restaurants = preloadManager.restaurants
-                    viewModel.extractCuisines()
-                }
-            } else {
-                // Then load restaurants
-                print("🔄 Starting restaurants load")
-                await viewModel.loadRestaurants()
-                print("✅ Restaurants load completed")
+            print("✅ Already have top picks loaded - skipping redundant API call")
+        }
+    }
+    
+    // Helper method to load restaurants
+    private func loadRestaurantsData() async {
+        // Small delay to allow UI to render loading indicators
+        try? await Task.sleep(nanoseconds: 300_000_000) // 300ms
+        
+        // Check if preloaded data is available
+        let hasPreloadedRestaurants = await MainActor.run {
+            return !preloadManager.restaurants.isEmpty
+        }
+        
+        // Check if we already have restaurants loaded
+        let alreadyHasRestaurants = await MainActor.run {
+            return !viewModel.restaurants.isEmpty
+        }
+        
+        if hasPreloadedRestaurants && !alreadyHasRestaurants {
+            await MainActor.run {
+                print("✅ Using preloaded restaurants: \(preloadManager.restaurants.count) items")
+                viewModel.restaurants = preloadManager.restaurants
+                viewModel.extractCuisines()
+                viewModel.isLoading = false
             }
-            
-            // If top picks are still empty after initial load, try refreshing them again
-            if viewModel.topPicks.isEmpty {
-                print("🔄 Top picks still empty, trying to refresh...")
-                try? await Task.sleep(nanoseconds: 1_000_000_000) // Wait 1 second
-                await viewModel.loadTopPicks()
+        } else if !alreadyHasRestaurants {
+            // Only load if absolutely necessary and we don't already have data
+            print("🔄 Loading restaurants from network (no preloaded or existing data)")
+            await viewModel.loadRestaurants()
+        } else {
+            await MainActor.run {
+                viewModel.isLoading = false
             }
+            print("✅ Already have restaurants loaded - skipping redundant API call")
         }
     }
     
@@ -505,21 +671,25 @@ struct HomeView: View {
                                         return
                                     }
                                     
-                                    // Update the last refresh time
+                                    // Update the last refresh time BEFORE making API calls to prevent simultaneous requests
                                     await MainActor.run {
                                         lastRefreshActionTime = currentTime
                                     }
                                     
                                     print("🔄 Pull-to-refresh triggered for entire view")
                                     
-                                    // Load sequentially - top picks first, then restaurants
-                                    print("🔄 Starting sequential refresh - top picks first")
-                                    await viewModel.loadTopPicks()
-                                    print("✅ Pull-to-refresh top picks completed")
-                                    
+                                    // Load restaurants first since they take longer
                                     print("🔄 Starting sequential refresh - restaurants")
                                     await viewModel.loadRestaurants()
                                     print("✅ Pull-to-refresh restaurants completed")
+                                    
+                                    // Allow a small delay before next API call
+                                    try? await Task.sleep(nanoseconds: 500_000_000) // 500ms delay
+                                    
+                                    // Then load top picks
+                                    print("🔄 Starting sequential refresh - top picks")
+                                    await viewModel.loadTopPicks()
+                                    print("✅ Pull-to-refresh top picks completed")
                                     
                                     isPullingToRefresh = false
                                 }
@@ -540,7 +710,6 @@ struct HomeView: View {
                         ProgressView()
                             .progressViewStyle(CircularProgressViewStyle(tint: AppColors.primaryGreen))
                             .scaleEffect(1.5)
-                            .padding()
                         Spacer()
                     }
                 }
@@ -645,19 +814,24 @@ struct HomeView: View {
                     topPicksSection
                       .onAppear {
                           print("📱 Top picks section appeared")
-                          // If the top picks are empty when the section appears, try to load them
-                          if viewModel.topPicks.isEmpty && !viewModel.isLoadingTopPicks {
+                          // Only refresh if absolutely necessary - when completely empty
+                          if viewModel.topPicks.isEmpty && !viewModel.isLoadingTopPicks && 
+                             Date().timeIntervalSince1970 - lastRefreshActionTime > minRefreshInterval {
                               Task {
-                                  print("🔄 Refreshing top picks from onAppear")
+                                  print("🔄 Refreshing top picks from onAppear (empty data)")
+                                  // Update refresh time before making the call to prevent simultaneous requests
+                                  lastRefreshActionTime = Date().timeIntervalSince1970
                                   await viewModel.loadTopPicks()
                               }
+                          } else {
+                              print("⏱️ Skipping top picks refresh on section appear - already loaded or in progress")
                           }
                       }
                     
                     // CUISINES SECTION (Horizontal scrolling buttons)
                     cuisinesSection
                     
-                    // ALL RESTAURANTS SECTION
+                    // ALL RESTAURANTS SECTION - Modified for better loading
                     restaurantsSection
                     
                     // Add bottom padding to ensure content isn't hidden behind the tab bar
@@ -691,7 +865,7 @@ struct HomeView: View {
         }
     }
     
-    // Top Picks Section
+    // Top Picks Section - Modified for better loading
     private var topPicksSection: some View {
         VStack(alignment: .leading, spacing: 5) {
             Text("TOP PICKS FOR YOU")
@@ -701,14 +875,18 @@ struct HomeView: View {
                 .padding(.top, 10)
             
             if viewModel.isLoadingTopPicks {
-                // Loading state
-                VStack {
+                // Enhanced loading state
+                VStack(spacing: 15) {
                     ProgressView()
                         .progressViewStyle(CircularProgressViewStyle(tint: AppColors.primaryGreen))
                         .scaleEffect(1.5)
-                        .frame(height: 160)
+                    
+                    Text("Loading top picks...")
+                        .font(.system(size: 14))
+                        .foregroundColor(.gray)
                 }
                 .frame(maxWidth: .infinity)
+                .frame(height: 160)
                 .background(Color.white)
             } else if viewModel.topPicks.isEmpty {
                 // Empty state with refresh button
@@ -725,6 +903,11 @@ struct HomeView: View {
                     
                     Button {
                         Task {
+                            // Set loading state before fetching
+                            await MainActor.run {
+                                viewModel.isLoadingTopPicks = true
+                            }
+                            
                             // Check if we should debounce this refresh action
                             let currentTime = Date().timeIntervalSince1970
                             if currentTime - lastRefreshActionTime < minRefreshInterval {
@@ -788,7 +971,7 @@ struct HomeView: View {
         }
     }
     
-    // Cuisines Section
+    // Cuisines Section - Modified for better loading
     private var cuisinesSection: some View {
         VStack(alignment: .leading, spacing: 5) {
             Text("CUISINES")
@@ -797,23 +980,20 @@ struct HomeView: View {
                 .padding(.horizontal, 20)
                 .padding(.top, 5)
             
-            if viewModel.cuisines.isEmpty {
-                if viewModel.isLoading {
-                    // Loading state
-                    HStack {
-                        ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle(tint: AppColors.primaryGreen))
-                            .padding(.vertical, 15)
-                    }
-                    .frame(maxWidth: .infinity)
-                } else {
-                    // Empty state
-                    Text("No cuisines available")
+            if viewModel.isLoading || viewModel.cuisines.isEmpty {
+                // Enhanced loading state - show loader while restaurants load since cuisines come from there
+                VStack(spacing: 10) {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: AppColors.primaryGreen))
+                        .scaleEffect(1.2)
+                    
+                    Text("Loading cuisines...")
                         .font(.system(size: 14))
                         .foregroundColor(.gray)
-                        .padding(.vertical, 15)
-                        .frame(maxWidth: .infinity)
                 }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 20)
+                .background(Color.white)
             } else {
                 // Horizontally scrolling cuisine buttons
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -841,11 +1021,12 @@ struct HomeView: View {
                     .padding(.horizontal, 20)
                     .padding(.vertical, 10)
                 }
+                .background(Color.white)
             }
         }
     }
     
-    // All Restaurants Section
+    // All Restaurants Section - Modified for better loading
     private var restaurantsSection: some View {
         VStack(alignment: .leading, spacing: 5) {
             Text("ALL RESTAURANTS")
@@ -855,8 +1036,8 @@ struct HomeView: View {
                 .padding(.top, 5)
             
             if viewModel.isLoading {
-                // Loading state
-                VStack(spacing: 20) {
+                // Enhanced loading state
+                VStack(spacing: 15) {
                     ProgressView()
                         .progressViewStyle(CircularProgressViewStyle(tint: AppColors.primaryGreen))
                         .scaleEffect(1.5)
@@ -866,7 +1047,9 @@ struct HomeView: View {
                         .foregroundColor(.gray)
                 }
                 .frame(maxWidth: .infinity)
+                .frame(minHeight: 200)
                 .padding(.vertical, 60)
+                .background(Color.white)
             } else if filteredRestaurants.isEmpty {
                 // Empty state
                 VStack(spacing: 15) {
@@ -888,10 +1071,43 @@ struct HomeView: View {
                                 .foregroundColor(AppColors.primaryGreen)
                         }
                         .padding(.top, 5)
+                    } else {
+                        // Add refresh button when no restaurants are available
+                        Button {
+                            Task {
+                                // Set loading state before fetching
+                                await MainActor.run {
+                                    viewModel.isLoading = true
+                                }
+                                
+                                let currentTime = Date().timeIntervalSince1970
+                                if currentTime - lastRefreshActionTime < minRefreshInterval {
+                                    return
+                                }
+                                
+                                lastRefreshActionTime = currentTime
+                                print("🔄 Manual refresh of restaurants initiated")
+                                await viewModel.loadRestaurants()
+                            }
+                        } label: {
+                            HStack {
+                                Image(systemName: "arrow.clockwise")
+                                Text("Refresh")
+                            }
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(AppColors.primaryGreen)
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 8)
+                            .background(AppColors.primaryGreen.opacity(0.1))
+                            .cornerRadius(20)
+                        }
+                        .padding(.top, 5)
                     }
                 }
                 .frame(maxWidth: .infinity)
+                .frame(minHeight: 200)
                 .padding(.vertical, 40)
+                .background(Color.white)
             } else {
                 // Restaurant count
                 Text("\(filteredRestaurants.count) Restaurant\(filteredRestaurants.count == 1 ? "" : "s") available for you")
@@ -899,6 +1115,9 @@ struct HomeView: View {
                     .foregroundColor(.gray)
                     .padding(.horizontal, 20)
                     .padding(.top, 5)
+                    .padding(.bottom, 5)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.white)
                 
                 // List of restaurants
                 LazyVStack(spacing: 15) {
@@ -998,7 +1217,21 @@ struct CuisineButton: View {
                     .frame(width: 70)
             }
             .padding(.horizontal, 5)
+            // Add a slight delay before executing the action to prevent UI freezing
+            .contentShape(Rectangle())
         }
+        // Prevent accidental double taps and improve performance
+        .buttonStyle(CuisineButtonStyle())
+    }
+}
+
+// Custom button style to improve touch handling
+struct CuisineButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .opacity(configuration.isPressed ? 0.8 : 1.0)
+            .scaleEffect(configuration.isPressed ? 0.98 : 1.0)
+            .animation(.easeInOut(duration: 0.2), value: configuration.isPressed)
     }
 }
 
@@ -1033,9 +1266,13 @@ struct TopPickCard: View {
     let restaurant: Restaurant
     @EnvironmentObject var orderManager: OrderManager
     @EnvironmentObject var favoriteManager: FavoriteManager
+    @State private var isInView: Bool = false
     
     var body: some View {
-        NavigationLink(destination: RestaurantDetailView(restaurant: restaurant)) {
+        NavigationLink(destination: 
+            // Pass restaurant to detail view to avoid redundant API call
+            RestaurantDetailView(restaurantId: product.restaurantId, preloadedRestaurant: restaurant)
+        ) {
             VStack(alignment: .leading) {
                 // Product Image
                 ZStack(alignment: .topTrailing) {
@@ -1055,6 +1292,7 @@ struct TopPickCard: View {
                             .font(.system(size: 12))
                     }
                     .padding(8)
+                    .zIndex(1) // Ensure button is above the card content
                 }
                 
                 // Product Info
@@ -1083,22 +1321,28 @@ struct TopPickCard: View {
                     }
                 }
             }
+            .contentShape(Rectangle()) // Make entire card tappable
             .frame(width: 150)
             .padding(8)
             .background(Color.white)
             .cornerRadius(12)
             .shadow(color: Color.black.opacity(0.08), radius: 4, y: 2)
         }
-        .buttonStyle(PlainButtonStyle()) // Fix navigation link appearance
+        .buttonStyle(RestaurantCardButtonStyle()) // Use the same button style for consistency
     }
 }
 
 // RestaurantCard - Card component for displaying a restaurant in the all restaurants section
 struct RestaurantCard: View {
     let restaurant: Restaurant
+    @State private var hasAppeared = false
+    @State private var isPreloading = false
     
     var body: some View {
-        NavigationLink(destination: RestaurantDetailView(restaurant: restaurant)) {
+        NavigationLink(destination: 
+            // Pass the entire restaurant object to avoid redundant API call
+            RestaurantDetailView(restaurantId: restaurant.id, preloadedRestaurant: restaurant)
+        ) {
             VStack(alignment: .leading, spacing: 0) {
                 // Restaurant Image
                 ZStack(alignment: .bottomLeading) {
@@ -1167,11 +1411,27 @@ struct RestaurantCard: View {
                 .padding(.horizontal, 15)
                 .padding(.vertical, 12)
             }
+            .contentShape(Rectangle()) // Make entire card tappable
             .background(Color.white)
             .cornerRadius(10)
             .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
+            .overlay(
+                Rectangle() // Invisible touch overlay to ensure tap works properly
+                    .fill(Color.clear)
+                    .contentShape(Rectangle())
+            )
         }
-        .buttonStyle(PlainButtonStyle()) // Fix navigation link appearance
+        .buttonStyle(RestaurantCardButtonStyle()) // Custom button style for better touch handling
+    }
+}
+
+// Custom button style for restaurant cards to ensure full card is tappable
+struct RestaurantCardButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .opacity(configuration.isPressed ? 0.9 : 1.0)
+            .scaleEffect(configuration.isPressed ? 0.98 : 1.0)
+            .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
     }
 }
 

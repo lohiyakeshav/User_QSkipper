@@ -16,6 +16,12 @@ struct RestaurantDetailView: View {
         self.restaurant = restaurant
     }
     
+    // New initializer with restaurantId and preloaded restaurant data to prevent redundant API calls
+    init(restaurantId: String, preloadedRestaurant: Restaurant) {
+        self.restaurant = preloadedRestaurant
+        print("🔥 Using preloaded restaurant data for: \(preloadedRestaurant.name)")
+    }
+    
     // Initializer with just restaurant ID, loading rest from network
     init(restaurantId: String) {
         // Create a temporary restaurant object until we load the real data
@@ -54,6 +60,22 @@ struct RestaurantDetailView: View {
             if restaurant.name == "Loading..." {
                 print("🔍 Loading full restaurant details for ID: \(restaurant.id)")
                 viewModel.loadRestaurant(id: restaurant.id)
+            } else {
+                // We have preloaded data, update the view model
+                viewModel.setRestaurant(restaurant)
+            }
+        }
+        .onDisappear {
+            print("🖥️ RestaurantDetailView disappeared")
+            // Clear cache when view disappears to prevent memory issues
+            // We'll leave the cache for this specific restaurant but clear others
+            let currentRestaurantId = restaurant.id
+            Task {
+                await MainActor.run {
+                    // Clear all product cache except for the current restaurant
+                    // This helps prevent memory issues while still allowing for quick return
+                    viewModel.clearCache()
+                }
             }
         }
         .sheet(item: $selectedProduct) { product in
@@ -145,60 +167,58 @@ struct RestaurantDetailView: View {
         }
     }
     
-    // MARK: - Restaurant Info Section
-    private var restaurantInfo: some View {
-        VStack(alignment: .leading, spacing: 15) {
-            // Restaurant Name - Use viewModel.restaurant if available, otherwise use the passed restaurant
+    // MARK: - Restaurant Header Section
+    private var restaurantHeader: some View {
+        VStack(alignment: .center, spacing: 10) {
+            // Restaurant Name
             Text(viewModel.restaurant?.name ?? restaurant.name)
                 .font(.system(size: 24, weight: .bold))
                 .foregroundColor(.black)
-                .padding(.horizontal, 20)
+                .multilineTextAlignment(.center)
             
-            // Restaurant Details in Row
-            restaurantDetailRow
+            // Details Row
+            HStack(spacing: 16) {
+                // CUISINE WITH EMOJI - Add cuisine with appropriate emoji
+                if let cuisine = viewModel.restaurant?.cuisine ?? restaurant.cuisine, !cuisine.isEmpty {
+                    HStack(spacing: 6) {
+                        Text(getCuisineEmoji(cuisine: cuisine))
+                            .font(.system(size: 16))
+                        
+                        Text(cuisine)
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(.gray)
+                    }
+                }
+                
+                // DELIVERY TIME
+                HStack(spacing: 4) {
+                    Image(systemName: "clock")
+                        .foregroundColor(AppColors.primaryGreen)
+                        .font(.system(size: 13))
+                    
+                    let estimatedTime = viewModel.restaurant?.estimatedTime ?? restaurant.estimatedTime ?? "30-40"
+                    Text("\(estimatedTime) mins")
+                        .font(.system(size: 14))
+                        .foregroundColor(.gray)
+                }
+                
+                // RATING
+                HStack(spacing: 3) {
+                    Image(systemName: "star.fill")
+                        .foregroundColor(.yellow)
+                        .font(.system(size: 13))
+                    
+                    let rating = viewModel.restaurant?.rating ?? restaurant.rating
+                    Text(String(format: "%.1f", rating))
+                        .font(.system(size: 14))
+                        .foregroundColor(.black)
+                }
+            }
         }
-        .padding(.vertical, 15)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 16)
         .frame(maxWidth: .infinity)
         .background(Color.white)
-    }
-    
-    private var restaurantDetailRow: some View {
-        HStack(spacing: 20) {
-            // Free Pickup Tag
-            HStack(spacing: 5) {
-                Image(systemName: "indianrupeesign")
-                    .foregroundColor(AppColors.primaryGreen)
-                    .font(.system(size: 13))
-                
-                Text("Free Pickup")
-                    .font(.system(size: 14))
-                    .foregroundColor(.gray)
-            }
-            
-            // Pickup Time - Use viewModel.restaurant if available
-            HStack(spacing: 5) {
-                Image(systemName: "clock")
-                    .foregroundColor(AppColors.primaryGreen)
-                    .font(.system(size: 13))
-                
-                let estimatedTime = viewModel.restaurant?.estimatedTime ?? restaurant.estimatedTime ?? "20-30"
-                Text("\(estimatedTime) mins")
-                    .font(.system(size: 14))
-                    .foregroundColor(.gray)
-            }
-            
-            // Rating - Use viewModel.restaurant if available
-            HStack(spacing: 3) {
-                Image(systemName: "star.fill")
-                    .foregroundColor(.yellow)
-                    .font(.system(size: 13))
-                
-                let rating = viewModel.restaurant?.rating ?? restaurant.rating
-                Text(String(format: "%.1f", rating))
-                    .font(.system(size: 14))
-                    .foregroundColor(.gray)
-            }
-        }
     }
     
     // MARK: - Menu Title Section
@@ -370,13 +390,64 @@ struct RestaurantDetailView: View {
     private var restaurantContent: some View {
         VStack(alignment: .leading, spacing: 0) {
             restaurantBanner
-            restaurantInfo
+            restaurantHeader
             menuTitleSection
             categoryFilterSection
             productsSection
         }
         .background(Color.gray.opacity(0.1))
         .edgesIgnoringSafeArea(.top)
+    }
+    
+    // Helper function to get the emoji for a cuisine type
+    private func getCuisineEmoji(cuisine: String) -> String {
+        let cuisine = cuisine.lowercased()
+        
+        if cuisine == "all" {
+            return "🍽️"
+        } else if cuisine.contains("pizza") {
+            return "🍕"
+        } else if cuisine.contains("burger") || cuisine.contains("fast food") {
+            return "🍔"
+        } else if cuisine.contains("dessert") || cuisine.contains("sweet") {
+            return "🍰"
+        } else if cuisine.contains("drink") || cuisine.contains("beverage") {
+            return "🥤"
+        } else if cuisine.contains("coffee") {
+            return "☕"
+        } else if cuisine.contains("breakfast") {
+            return "🍳"
+        } else if cuisine.contains("lunch") {
+            return "🍱"
+        } else if cuisine.contains("dinner") {
+            return "🍲"
+        } else if cuisine.contains("vegetarian") || cuisine.contains("veg") || cuisine.contains("gujarati") {
+            return "🥗"
+        } else if cuisine.contains("meat") || cuisine.contains("chicken") {
+            return "🍗"
+        } else if cuisine.contains("seafood") || cuisine.contains("fish") {
+            return "🐟"
+        } else if cuisine.contains("italian") {
+            return "🍝"
+        } else if cuisine.contains("chinese") || cuisine.contains("hakka") {
+            return "🥢"
+        } else if cuisine.contains("indian") || cuisine.contains("north indian") {
+            return "🍛"
+        } else if cuisine.contains("south indian") {
+            return "🥘"
+        } else if cuisine.contains("mexican") {
+            return "🌮"
+        } else if cuisine.contains("japanese") {
+            return "🍱"
+        } else if cuisine.contains("thai") {
+            return "🥡"
+        } else if cuisine.contains("sandwich") {
+            return "🥪"
+        } else if cuisine.contains("street food") {
+            return "🌭"
+        } else {
+            return "🍴"
+        }
     }
 }
 

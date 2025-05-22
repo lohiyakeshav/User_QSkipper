@@ -101,8 +101,10 @@ struct RestaurantImageView: View {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFill()
+                    .allowsHitTesting(false)
             } else {
                 fallbackView
+                    .allowsHitTesting(false)
             }
         }
         .onAppear {
