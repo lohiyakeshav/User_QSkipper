@@ -23,36 +23,9 @@ struct RestaurantImageLoader: View {
                     .frame(width: 48, height: 48)
                     .cornerRadius(8)
                     .clipped()
-            } else if isLoading {
-                // Loading indicator
-                ProgressView()
-                    .frame(width: 48, height: 48)
-                    .background(Color.gray.opacity(0.1))
-                    .cornerRadius(8)
             } else {
-                // Fallback to placeholder or static images
-                let imageName = getImageName(for: restaurantId)
-                
-                if !imageName.isEmpty, let uiImage = UIImage(named: imageName) {
-                    // Local image
-                    Image(uiImage: uiImage)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(width: 48, height: 48)
-                        .cornerRadius(8)
-                        .clipped()
-                } else {
-                    // Default placeholder
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(Color.gray.opacity(0.2))
-                            .frame(width: 48, height: 48)
-                        
-                        Image(systemName: "fork.knife")
-                            .foregroundColor(.gray)
-                            .font(.system(size: 22))
-                    }
-                }
+                // Use a placeholder with gradient instead of a loading indicator
+                placeholderView
             }
         }
         .onAppear {
@@ -60,12 +33,52 @@ struct RestaurantImageLoader: View {
         }
     }
     
+    private var placeholderView: some View {
+        ZStack {
+            // Generate a consistent gradient based on restaurant ID
+            let colors = gradientColors(for: restaurantId)
+            
+            LinearGradient(
+                gradient: Gradient(colors: colors),
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .frame(width: 48, height: 48)
+            .cornerRadius(8)
+            
+            // Show first letter if we have restaurant name
+            if let restaurant = restaurant, restaurant.name != "Restaurant" {
+                Text(String(restaurant.name.prefix(1)).uppercased())
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundColor(.white)
+            } else {
+                Image(systemName: "fork.knife")
+                    .font(.system(size: 16))
+                    .foregroundColor(.white)
+            }
+        }
+    }
+    
+    private func gradientColors(for id: String) -> [Color] {
+        // Generate consistent colors based on the restaurant ID
+        let hash = abs(id.hashValue)
+        let colorSets: [[Color]] = [
+            [Color(hex: "#FF5F6D"), Color(hex: "#FFC371")],
+            [Color(hex: "#11998e"), Color(hex: "#38ef7d")],
+            [Color(hex: "#FC5C7D"), Color(hex: "#6A82FB")],
+            [Color(hex: "#FFAFBD"), Color(hex: "#ffc3a0")],
+            [Color(hex: "#2193b0"), Color(hex: "#6dd5ed")],
+            [Color(hex: "#C33764"), Color(hex: "#1D2671")]
+        ]
+        
+        return colorSets[hash % colorSets.count]
+    }
+    
     private func loadRestaurant() {
         // Only start loading if we don't already have an image
         guard restaurantImage == nil, !isLoading else { return }
         
         isLoading = true
-        print("📸 Loading restaurant details for ID: \(restaurantId)")
         
         // Use NetworkUtils to get restaurant details and image with user-initiated priority
         Task(priority: .userInitiated) {
@@ -73,7 +86,6 @@ struct RestaurantImageLoader: View {
                 let fetchedRestaurant = try await NetworkUtils.shared.fetchRestaurant(with: restaurantId)
                 await MainActor.run {
                     self.restaurant = fetchedRestaurant
-                    print("✅ Successfully loaded restaurant: \(fetchedRestaurant.name)")
                     
                     // If we have a photo ID, load the image
                     if let photoId = fetchedRestaurant.photoId {
@@ -84,8 +96,6 @@ struct RestaurantImageLoader: View {
                     }
                 }
             } catch {
-                print("❌ Error fetching restaurant data: \(error)")
-                
                 // As a fallback, try loading image directly using the restaurant ID
                 await MainActor.run {
                     loadImageFromPhotoId(restaurantId)
@@ -95,47 +105,18 @@ struct RestaurantImageLoader: View {
     }
     
     private func loadImageFromPhotoId(_ photoId: String) {
-        print("📸 Loading restaurant image with photo ID: \(photoId)")
-        
-        // Use NetworkUtils to get restaurant image with user-initiated priority
-        Task(priority: .userInitiated) {
+        Task {
             do {
                 let image = try await NetworkUtils.shared.fetchRestaurantImage(photoId: photoId)
                 await MainActor.run {
                     self.restaurantImage = image
                     self.isLoading = false
-                    print("✅ Successfully loaded restaurant image for photo ID: \(photoId)")
                 }
             } catch {
-                print("❌ Error loading restaurant image: \(error)")
                 await MainActor.run {
                     self.isLoading = false
                 }
             }
-        }
-    }
-    
-    private func getImageName(for id: String) -> String {
-        // Return local image name based on restaurant ID
-        switch id {
-        case "6661a3534d1e0d993a73e66a":
-            return "waffle_co"
-        case "6661a3894d1e0d993a73e66c":
-            return "burger_king"
-        default:
-            return "wendys"
-        }
-    }
-    
-    private func getImageURL(for id: String) -> URL? {
-        // Fallback URLs if local images aren't available
-        switch id {
-        case "6661a3534d1e0d993a73e66a":
-            return URL(string: "https://example.com/waffle_co.jpg")
-        case "6661a3894d1e0d993a73e66c":
-            return URL(string: "https://example.com/burger_king.jpg")
-        default:
-            return URL(string: "https://example.com/wendys.jpg")
         }
     }
 }

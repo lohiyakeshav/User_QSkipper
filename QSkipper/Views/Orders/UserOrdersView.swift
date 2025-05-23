@@ -78,6 +78,10 @@ struct UserOrdersView: View {
                                     OrderCard(order: order)
                                         .padding(.horizontal, 16)
                                 }
+                                
+                                // Add extra space at the bottom to ensure the last order is fully visible
+                                Color.clear
+                                    .frame(height: 120)
                             }
                             .padding(.vertical, 8)
                         }
@@ -142,31 +146,6 @@ struct UserOrdersView: View {
                         }
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                         .animation(.easeInOut, value: viewModel.errorMessage != nil)
-                    }
-                }
-            )
-            .overlay(
-                Group {
-                    if viewModel.isLoadingRestaurantData && !viewModel.isLoading {
-                        VStack {
-                            Spacer()
-                            
-                            HStack {
-                                ProgressView()
-                                    .scaleEffect(0.8)
-                                    .tint(.white)
-                                
-                                Text("Loading restaurant information...")
-                                    .font(.system(size: 14))
-                                    .foregroundColor(.white)
-                                
-                                Spacer()
-                            }
-                            .padding()
-                            .background(Color.gray.opacity(0.8))
-                            .cornerRadius(8)
-                            .padding()
-                        }
                     }
                 }
             )
@@ -259,6 +238,7 @@ struct OrderCard: View {
                     Text(order.restaurantLocation)
                         .font(.system(size: 14))
                         .foregroundColor(.gray)
+                        .lineLimit(1)
                 }
                 
                 Spacer()

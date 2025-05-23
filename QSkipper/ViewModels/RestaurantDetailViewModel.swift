@@ -36,6 +36,13 @@ class RestaurantDetailViewModel: ObservableObject {
             }
         }
         
+        // Check if we already have this restaurant in memory
+        if let existingRestaurant = RestaurantManager.shared.getRestaurant(by: id) {
+            print("✅ Using cached restaurant data for: \(existingRestaurant.name)")
+            self.restaurant = existingRestaurant
+            return
+        }
+        
         isLoading = true
         errorMessage = nil
         

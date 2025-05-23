@@ -16,7 +16,7 @@ class UserOrdersViewModel: ObservableObject {
     
     // Computed property to determine if any restaurant data is loading
     var isLoadingRestaurantData: Bool {
-        return restaurantLoadingStates.values.contains(true)
+        return false // Always return false to prevent showing the loading indicator
     }
     
     // Better filtering function with clear variable names
@@ -200,6 +200,7 @@ class UserOrdersViewModel: ObservableObject {
     // Process order responses with restaurant data
     private func mapResponsesToOrders(_ responses: [UserOrderResponseDTO]) async -> [UserOrder] {
         var mappedOrders: [UserOrder] = []
+        var restaurantIdsToFetch = Set<String>()
         
         for dto: UserOrderResponseDTO in responses {
             let restaurantId = dto.resturant
@@ -207,8 +208,6 @@ class UserOrdersViewModel: ObservableObject {
             // Use restaurant data if we have it, otherwise provide defaults
             let restaurantName = getRestaurantName(for: restaurantId)
             let location = getRestaurantLocation(for: restaurantId)
-            
-            print("🔄 Mapping order for restaurant: \(restaurantName) (ID: \(restaurantId))")
             
             // Create order items
             let items = dto.items.map { itemDto in
@@ -227,14 +226,7 @@ class UserOrdersViewModel: ObservableObject {
             // Parse schedule date if available
             var scheduleDate: Date? = nil
             if let scheduleDateString = dto.scheduleDate {
-                print("📅 Found scheduled date string: \(scheduleDateString)")
                 scheduleDate = parseISO8601Date(from: scheduleDateString)
-                
-                if let date = scheduleDate {
-                    print("✅ Successfully parsed scheduled date: \(date)")
-                } else {
-                    print("❌ Failed to parse scheduled date: \(scheduleDateString)")
-                }
             }
             
             // Create the order
@@ -256,9 +248,20 @@ class UserOrdersViewModel: ObservableObject {
             
             mappedOrders.append(order)
             
-            // Fetch restaurant image in background without blocking
+            // Add to list of restaurants to fetch if we don't have details
             if !hasRestaurantDetails(for: restaurantId) {
-                fetchRestaurantDetailsInBackground(for: restaurantId)
+                restaurantIdsToFetch.insert(restaurantId)
+            }
+        }
+        
+        // Fetch restaurant details in background after returning orders
+        if !restaurantIdsToFetch.isEmpty {
+            Task {
+                for restaurantId in restaurantIdsToFetch {
+                    fetchRestaurantDetailsInBackground(for: restaurantId)
+                    // Add a small delay between requests to avoid overwhelming the server
+                    try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
+                }
             }
         }
         
@@ -281,6 +284,9 @@ class UserOrdersViewModel: ObservableObject {
                 }
                 
                 print("✅ Successfully fetched \(restaurants.count) restaurants")
+                
+                // Update all orders with restaurant info immediately
+                self.updateOrdersWithRestaurantInfo()
             }
         } catch {
             print("❌ Error fetching restaurants: \(error)")
@@ -289,13 +295,19 @@ class UserOrdersViewModel: ObservableObject {
     }
     
     func fetchRestaurantDetailsInBackground(for restaurantId: String) {
+        // Skip if we already have this restaurant's details
+        guard !hasRestaurantDetails(for: restaurantId) else {
+            print("✅ Already have details for restaurant \(restaurantId)")
+            return
+        }
+        
         // Cancel any existing task for this restaurant
         restaurantFetchTasks[restaurantId]?.cancel()
         
         // Create a new task
         let task = Task {
             print("📸 Loading restaurant details for ID: \(restaurantId)")
-            restaurantLoadingStates[restaurantId] = true
+            // Don't set loading state to true anymore
             
             do {
                 let restaurant = try await APIClient.shared.fetchRestaurant(with: restaurantId)
@@ -304,23 +316,29 @@ class UserOrdersViewModel: ObservableObject {
                     self.restaurantDetails[restaurantId] = restaurant
                     
                     // Update orders that use this restaurant
-                    var updatedOrders = self.orders
-                    for i in 0..<updatedOrders.count {
-                        if updatedOrders[i].restaurantId == restaurantId {
-                            updatedOrders[i].restaurantName = restaurant.name ?? "Restaurant"
-                            updatedOrders[i].restaurantLocation = restaurant.location ?? "Unknown location"
-                        }
-                    }
-                    self.orders = updatedOrders
+                    self.updateOrdersWithRestaurantInfo()
                 }
             } catch {
                 print("❌ Error fetching restaurant data: \(error.localizedDescription)")
             }
-            
-            restaurantLoadingStates[restaurantId] = false
         }
         
         restaurantFetchTasks[restaurantId] = task
+    }
+    
+    // New helper method to update all orders with restaurant info
+    private func updateOrdersWithRestaurantInfo() {
+        var updatedOrders = self.orders
+        
+        for i in 0..<updatedOrders.count {
+            let restaurantId = updatedOrders[i].restaurantId
+            if let restaurant = restaurantDetails[restaurantId] {
+                updatedOrders[i].restaurantName = restaurant.name
+                updatedOrders[i].restaurantLocation = restaurant.location
+            }
+        }
+        
+        self.orders = updatedOrders
     }
     
     // Helpers for restaurant data

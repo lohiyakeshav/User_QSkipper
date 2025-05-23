@@ -121,9 +121,26 @@ struct RestaurantImageView: View {
             )
             
             if isLoading {
-                ProgressView()
-                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                    .scaleEffect(1.5)
+                // More subtle loading indicator that doesn't disrupt the UI
+                VStack(spacing: 8) {
+                    // Show restaurant initial or icon
+                    if let name = name, !name.isEmpty && name != "Loading..." {
+                        Text(String(name.prefix(1)).uppercased())
+                            .font(.system(size: 30, weight: .bold))
+                            .foregroundColor(.white)
+                    } else {
+                        Image(systemName: "fork.knife")
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: 40, height: 40)
+                            .foregroundColor(.white)
+                    }
+                    
+                    // Small loading indicator
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                        .scaleEffect(0.8)
+                }
             } else {
                 VStack(spacing: 8) {
                     Image(systemName: "fork.knife")
@@ -132,7 +149,7 @@ struct RestaurantImageView: View {
                         .frame(width: 40, height: 40)
                         .foregroundColor(.white)
                     
-                    if let name = name, !name.isEmpty {
+                    if let name = name, !name.isEmpty && name != "Loading..." {
                         Text(String(name.prefix(1)).uppercased())
                             .font(.system(size: 30, weight: .bold))
                             .foregroundColor(.white)

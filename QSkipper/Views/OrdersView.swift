@@ -15,7 +15,12 @@ struct OrdersView: View {
                     ForEach(viewModel.orders, id: \.id) { order in
                         OrderRow(order: order)
                     }
+                    // Add extra space at the bottom to ensure last order is visible
+                    Color.clear.frame(height: 60)
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
                 }
+                .listStyle(.plain)
             }
         }
         .navigationTitle("Orders")
@@ -41,7 +46,7 @@ struct OrderRow: View {
     let order: Order
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text(RestaurantManager.shared.getRestaurant(by: order.restaurantId)?.name ?? "Restaurant")
                     .font(.headline)
@@ -71,7 +76,8 @@ struct OrderRow: View {
                     .foregroundColor(.secondary)
             }
         }
-        .padding(.vertical, 8)
+        .padding(.vertical, 16)
+        .padding(.horizontal, 4)
     }
     
     private var statusColor: Color {

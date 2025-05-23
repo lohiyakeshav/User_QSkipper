@@ -177,6 +177,10 @@ struct MyOrdersView: View {
                     }
                     .buttonStyle(PlainButtonStyle())
                 }
+                
+                // Add extra spacing at the bottom to ensure last item is visible
+                Color.clear
+                    .frame(height: 120)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)

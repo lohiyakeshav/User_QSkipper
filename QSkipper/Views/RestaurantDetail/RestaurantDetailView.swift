@@ -295,18 +295,44 @@ struct RestaurantDetailView: View {
     }
     
     private var loadingView: some View {
-        VStack {
-            ProgressView()
-                .progressViewStyle(CircularProgressViewStyle(tint: AppColors.primaryGreen))
-                .scaleEffect(1.5)
-            
-            Text("Loading menu...")
-                .font(.system(size: 14))
-                .foregroundColor(.gray)
-                .padding(.top, 10)
+        VStack(spacing: 20) {
+            // Skeleton loading UI for menu items
+            ForEach(0..<3) { _ in
+                HStack(spacing: 15) {
+                    // Two skeleton cards per row
+                    ForEach(0..<2) { _ in
+                        VStack(alignment: .leading, spacing: 10) {
+                            // Image placeholder
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color.gray.opacity(0.2))
+                                .frame(height: 120)
+                            
+                            // Title placeholder
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(Color.gray.opacity(0.2))
+                                .frame(height: 18)
+                                .frame(width: 100)
+                            
+                            // Price placeholder
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(Color.gray.opacity(0.2))
+                                .frame(height: 14)
+                                .frame(width: 60)
+                            
+                            // Button placeholder
+                            RoundedRectangle(cornerRadius: 20)
+                                .fill(Color.gray.opacity(0.2))
+                                .frame(height: 36)
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                }
+            }
         }
-        .frame(maxWidth: .infinity, minHeight: 300)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 16)
         .background(Color.white)
+        .shimmering() // Add shimmer effect
     }
     
     private var emptyProductsView: some View {
@@ -333,10 +359,10 @@ struct RestaurantDetailView: View {
                 
                 LazyVGrid(
                     columns: [
-                        GridItem(.flexible(minimum: 150, maximum: 180), spacing: 12),
-                        GridItem(.flexible(minimum: 150, maximum: 180), spacing: 12)
+                        GridItem(.flexible(minimum: 150, maximum: 180), spacing: 16),
+                        GridItem(.flexible(minimum: 150, maximum: 180), spacing: 16)
                     ], 
-                    spacing: 12
+                    spacing: 16
                 ) {
                     ForEach(filteredProducts) { product in
                         MenuProductCard(
@@ -354,7 +380,7 @@ struct RestaurantDetailView: View {
                     }
                 }
                 .padding(.horizontal, 16)
-                .padding(.vertical, 16)
+                .padding(.vertical, 20)
                 .background(Color.white)
             } else {
                 // No products available for selected category
@@ -486,9 +512,9 @@ struct MenuProductCard: View {
     @State private var isFavorite = false
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 12) {
             // Product Image and Info section that should be tappable
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 12) {
                 // Product Image
                 ZStack(alignment: .topTrailing) {
                     ProductImageView(photoId: product.photoId, name: product.name, category: product.category)
@@ -526,6 +552,7 @@ struct MenuProductCard: View {
                     .lineLimit(2)
                     .frame(height: 40, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 4)
                 
                 // Rating and Price Row
                 HStack {
@@ -675,13 +702,14 @@ struct MenuProductCard: View {
                     .buttonStyle(BorderlessButtonStyle()) // Prevent tap propagation
                 }
             }
-            .frame(height: 36)
+            .padding(.top, 4)
+            .padding(.bottom, 4)
         }
-        .padding(10)
+        .padding(12)
         .background(Color.white)
         .cornerRadius(12)
         .shadow(color: Color.black.opacity(0.1), radius: 5, x: 0, y: 2)
-        .frame(minWidth: 0, maxWidth: .infinity)
+        .padding(.bottom, 16)
         .onAppear {
             // Check if already in cart
             quantity = orderManager.getQuantityInCart(productId: product.id)
