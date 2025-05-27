@@ -65,6 +65,7 @@ class FavoriteManager: ObservableObject {
 class HomeViewModel: ObservableObject {
     private let restaurantManager = RestaurantManager.shared
     private let networkUtils = NetworkUtils.shared
+    private let networkDiagnostics = NetworkDiagnostics.shared
     
     @Published var restaurants: [Restaurant] = []
     @Published var topPicks: [Product] = []
@@ -75,6 +76,7 @@ class HomeViewModel: ObservableObject {
     @Published var errorMessage: String? = nil
     @Published var showError: Bool = false
     @Published var lastRefreshTime: Date = Date()
+    @Published var isConnected: Bool = true
     
     // Cache and cooldown management
     private var lastTopPicksRefreshTime: TimeInterval = 0
@@ -89,6 +91,57 @@ class HomeViewModel: ObservableObject {
     private var restaurantDetailsCache: [String: Restaurant] = [:]
     private var pendingRestaurantRequests: Set<String> = []
     
+    // Maximum number of retries for network operations
+    private let maxRetries = 3
+    
+    // Initialize with connectivity monitoring
+    init() {
+        // Start monitoring network connectivity
+        setupNetworkMonitoring()
+    }
+    
+    private func setupNetworkMonitoring() {
+        // Check initial connectivity
+        Task {
+            let isNetworkAvailable = await networkDiagnostics.checkConnectivity()
+            await MainActor.run {
+                self.isConnected = isNetworkAvailable
+                print("🌐 Initial network connectivity: \(isNetworkAvailable ? "Connected" : "Disconnected")")
+                
+                // Set appropriate error message if disconnected
+                if !isNetworkAvailable {
+                    self.errorMessage = "No internet connection. Please check your connection and try again."
+                    self.showError = true
+                }
+            }
+        }
+        
+        // Setup periodic connectivity checks
+        Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            
+            Task {
+                let isNetworkAvailable = await self.networkDiagnostics.checkConnectivity()
+                await MainActor.run {
+                    // Only update if connectivity status has changed
+                    if self.isConnected != isNetworkAvailable {
+                        self.isConnected = isNetworkAvailable
+                        print("🌐 Network connectivity changed: \(isNetworkAvailable ? "Connected" : "Disconnected")")
+                        
+                        if !isNetworkAvailable {
+                            self.errorMessage = "No internet connection. Please check your connection and try again."
+                            self.showError = true
+                        } else if self.errorMessage?.contains("internet connection") == true {
+                            // Clear network-related error if we're back online
+                            self.errorMessage = nil
+                            self.showError = false
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
     // Helper method to batch process restaurant details
     func prefetchRestaurantDetails(for productList: [Product]) async {
         let restaurantIds = Set(productList.map { $0.restaurantId })
@@ -98,9 +151,11 @@ class HomeViewModel: ObservableObject {
         
         guard !newRestaurantIds.isEmpty else { return }
         
-        // Mark all as pending to prevent duplicate requests
-        for id in newRestaurantIds {
-            pendingRestaurantRequests.insert(id)
+        // Mark all as pending to prevent duplicate requests - do this on main actor
+        await MainActor.run {
+            for id in newRestaurantIds {
+                pendingRestaurantRequests.insert(id)
+            }
         }
         
         print("🔍 Prefetching details for \(newRestaurantIds.count) restaurants")
@@ -111,16 +166,44 @@ class HomeViewModel: ObservableObject {
                 // Skip if we already have the restaurant in main list with good data
                 if let existingRestaurant = restaurants.first(where: { $0.id == id }), 
                    existingRestaurant.name != "Restaurant" {
-                    restaurantDetailsCache[id] = existingRestaurant
+                    await MainActor.run {
+                        restaurantDetailsCache[id] = existingRestaurant
+                        pendingRestaurantRequests.remove(id)
+                    }
                     continue
                 }
                 
                 // Only make API call if we should fetch this restaurant
-                if shouldFetchRestaurantDetails(forId: id) {
-                    let restaurant = try await networkUtils.fetchRestaurant(with: id)
-                    await MainActor.run {
-                        restaurantDetailsCache[id] = restaurant
+                let shouldFetch = await shouldFetchRestaurantDetails(forId: id)
+                if shouldFetch {
+                    // Try with retries for reliability
+                    var retryCount = 0
+                    var success = false
+                    
+                    while !success && retryCount < maxRetries {
+                        do {
+                            let restaurant = try await networkUtils.fetchRestaurant(with: id)
+                            await MainActor.run {
+                                restaurantDetailsCache[id] = restaurant
+                                success = true
+                            }
+                        } catch {
+                            retryCount += 1
+                            if retryCount >= maxRetries {
+                                print("⚠️ Failed to fetch restaurant \(id) after \(maxRetries) attempts: \(error.localizedDescription)")
+                                // Log error but don't throw since this is a background prefetch operation
+                                // and shouldn't fail the parent operation
+                                success = false
+                                break
+                            }
+                            
+                            // Exponential backoff: 0.5s, 1s, 2s
+                            let delay = TimeInterval(0.5 * pow(2.0, Double(retryCount - 1)))
+                            print("⚠️ Retry \(retryCount)/\(maxRetries) for restaurant \(id) after \(delay)s")
+                            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                        }
                     }
+                    
                     // Add a small delay between requests
                     try? await Task.sleep(nanoseconds: 300_000_000) // 300ms
                 }
@@ -128,18 +211,29 @@ class HomeViewModel: ObservableObject {
                 print("⚠️ Failed to fetch restaurant \(id): \(error.localizedDescription)")
             }
             
-            // Remove from pending regardless of success/failure
-            pendingRestaurantRequests.remove(id)
+            // Remove from pending regardless of success/failure - on main actor
+            await MainActor.run {
+                pendingRestaurantRequests.remove(id)
+            }
         }
     }
     
     // Load all restaurants
     @MainActor
     func loadRestaurants() async {
+        // First check network connectivity
+        if !isConnected {
+            errorMessage = "No internet connection. Please check your connection and try again."
+            showError = true
+            isLoading = false
+            return
+        }
+        
         // Check cooldown timer
         let now = Date().timeIntervalSince1970
         if now - lastRestaurantsRefreshTime < cooldownPeriod && !restaurants.isEmpty {
             print("⏱️ Restaurant refresh cooldown active. Using cached data. Next refresh available in \(Int(cooldownPeriod - (now - lastRestaurantsRefreshTime)))s")
+            isLoading = false
             return
         }
         
@@ -149,32 +243,97 @@ class HomeViewModel: ObservableObject {
             return
         }
         
+        // Set loading state but DON'T clear existing data
         isLoading = true
         errorMessage = nil
         showError = false
         
+        // Store current data for rollback if needed
+        let previousRestaurants = self.restaurants
+        
         do {
             print("📡 HomeViewModel: Loading restaurants...")
-            let fetchedRestaurants = try await restaurantManager.fetchAllRestaurants()
             
-            print("✅ Successfully loaded \(fetchedRestaurants.count) restaurants")
-            self.restaurants = fetchedRestaurants
+            // Try with retries for reliability
+            var retryCount = 0
+            var fetchedRestaurants: [Restaurant] = []
+            var lastError: Error? = nil
             
-            // Update cache with fetched restaurants
-            for restaurant in fetchedRestaurants {
-                restaurantDetailsCache[restaurant.id] = restaurant
+            while retryCount < maxRetries {
+                do {
+                    fetchedRestaurants = try await restaurantManager.fetchAllRestaurants()
+                    
+                    // Success, exit retry loop
+                    print("✅ Successfully loaded \(fetchedRestaurants.count) restaurants on attempt \(retryCount + 1)")
+                    break
+                } catch {
+                    retryCount += 1
+                    lastError = error
+                    print("⚠️ Error on attempt \(retryCount): \(error.localizedDescription)")
+                    
+                    // If this is our last retry, don't delay
+                    if retryCount >= maxRetries {
+                        print("❌ All \(maxRetries) attempts failed for restaurants")
+                        break
+                    }
+                    
+                    // Exponential backoff: 0.5s, 1s, 2s
+                    let delay = TimeInterval(0.5 * pow(2.0, Double(retryCount - 1)))
+                    print("⏱️ Retry \(retryCount)/\(maxRetries) after \(delay)s")
+                    try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                }
             }
             
-            // Extract cuisines after loading restaurants
-            extractCuisines()
+            // Only update UI if we got new data
+            if !fetchedRestaurants.isEmpty {
+                self.restaurants = fetchedRestaurants
+                
+                // Update cache with fetched restaurants
+                for restaurant in fetchedRestaurants {
+                    restaurantDetailsCache[restaurant.id] = restaurant
+                }
+                
+                // Extract cuisines after loading restaurants
+                extractCuisines()
+                lastRefreshTime = Date()
+                lastRestaurantsRefreshTime = now
+                print("✅ Updated UI with new restaurant data: \(fetchedRestaurants.count) items")
+            } else if let error = lastError {
+                // We exhausted retries and still have an error - set error state instead of throwing
+                if error.localizedDescription.contains("offline") || 
+                   error.localizedDescription.contains("network connection") ||
+                   error.localizedDescription.contains("The Internet connection appears to be offline") {
+                    errorMessage = "No internet connection. Please check your connection and try again."
+                } else {
+                    errorMessage = "Could not load restaurants: \(error.localizedDescription)"
+                }
+                showError = true
+                print("❌ HomeViewModel: All restaurant retries failed: \(error.localizedDescription)")
+                
+                // Note: We're keeping the old data visible, so we don't clear restaurants here
+                print("✅ Keeping existing data: \(previousRestaurants.count) restaurants")
+            } else {
+                // We got an empty response but no error - very unlikely
+                print("⚠️ Empty restaurants response without error - keeping existing data")
+            }
+            
             isLoading = false
-            lastRefreshTime = Date()
-            lastRestaurantsRefreshTime = now
         } catch {
             print("❌ Error loading restaurants: \(error.localizedDescription)")
-            errorMessage = "Could not load restaurants: \(error.localizedDescription)"
+            
+            if error.localizedDescription.contains("offline") || 
+               error.localizedDescription.contains("network connection") ||
+               error.localizedDescription.contains("The Internet connection appears to be offline") {
+                errorMessage = "No internet connection. Please check your connection and try again."
+            } else {
+                errorMessage = "Could not load restaurants: \(error.localizedDescription)"
+            }
+            
             showError = true
             isLoading = false
+            
+            // Don't clear existing data on error
+            print("✅ Keeping existing data after error: \(previousRestaurants.count) restaurants")
         }
     }
     
@@ -194,26 +353,75 @@ class HomeViewModel: ObservableObject {
     }
     
     func loadTopPicks() async {
+        // First check network connectivity
+        await MainActor.run {
+            if !isConnected {
+                errorMessage = "No internet connection. Please check your connection and try again."
+                showError = true
+                isLoadingTopPicks = false
+                return
+            }
+        }
+        
         // Check cooldown timer
         let now = Date().timeIntervalSince1970
         if now - lastTopPicksRefreshTime < cooldownPeriod && !topPicks.isEmpty {
             print("⏱️ TopPicks refresh cooldown active. Using cached data. Next refresh available in \(Int(cooldownPeriod - (now - lastTopPicksRefreshTime)))s")
+            await MainActor.run {
+                isLoadingTopPicks = false
+            }
             return
         }
         
-        if isLoadingTopPicks {
+        // Store current data for possible rollback
+        let previousTopPicks = await MainActor.run { self.topPicks }
+        
+        let isAlreadyLoading = await MainActor.run {
+            let currentlyLoading = isLoadingTopPicks
+            if !currentlyLoading {
+                isLoadingTopPicks = true
+                errorMessage = nil
+            }
+            return currentlyLoading
+        }
+        
+        if isAlreadyLoading {
             print("⚠️ HomeViewModel: Already loading top picks, skipping duplicate request")
             return
         }
         
-        await MainActor.run {
-            isLoadingTopPicks = true
-            errorMessage = nil
-        }
-        
         do {
             print("📡 HomeViewModel: Fetching top picks from network")
-            let fetchedTopPicks = try await networkUtils.fetchTopPicks()
+            
+            // Try with retries for reliability
+            var retryCount = 0
+            var fetchedTopPicks: [Product] = []
+            var lastError: Error? = nil
+            
+            while retryCount < maxRetries {
+                do {
+                    fetchedTopPicks = try await networkUtils.fetchTopPicks()
+                    
+                    // Success, exit retry loop
+                    print("✅ Successfully loaded \(fetchedTopPicks.count) top picks on attempt \(retryCount + 1)")
+                    break
+                } catch {
+                    retryCount += 1
+                    lastError = error
+                    print("⚠️ Error on attempt \(retryCount): \(error.localizedDescription)")
+                    
+                    // If this is our last retry, don't delay
+                    if retryCount >= maxRetries {
+                        print("❌ All \(maxRetries) attempts failed for top picks")
+                        break
+                    }
+                    
+                    // Exponential backoff: 0.5s, 1s, 2s
+                    let delay = TimeInterval(0.5 * pow(2.0, Double(retryCount - 1)))
+                    print("⏱️ Retry \(retryCount)/\(maxRetries) after \(delay)s")
+                    try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                }
+            }
             
             // Prefetch restaurant details for top picks to avoid redundant calls
             if !fetchedTopPicks.isEmpty {
@@ -225,10 +433,26 @@ class HomeViewModel: ObservableObject {
             await MainActor.run {
                 print("✅ HomeViewModel: Successfully loaded \(fetchedTopPicks.count) top picks")
                 
+                // Check if we have data after retries
                 if !fetchedTopPicks.isEmpty {
                     // Only update if we got non-empty results
                     self.topPicks = fetchedTopPicks
                     lastTopPicksRefreshTime = now
+                    print("✅ Updated UI with new top picks data: \(fetchedTopPicks.count) items")
+                } else if let error = lastError {
+                    // We exhausted retries and still have an error - set error state instead of throwing
+                    if error.localizedDescription.contains("offline") || 
+                       error.localizedDescription.contains("network connection") ||
+                       error.localizedDescription.contains("The Internet connection appears to be offline") {
+                        errorMessage = "No internet connection. Please check your connection and try again."
+                    } else {
+                        errorMessage = "Could not load top picks: \(error.localizedDescription)"
+                    }
+                    showError = true
+                    print("❌ HomeViewModel: All retries failed: \(error.localizedDescription)")
+                    
+                    // Keep showing existing data
+                    print("✅ Keeping existing data: \(self.topPicks.count) top picks")
                 } else {
                     print("⚠️ HomeViewModel: Received empty top picks array")
                     // Keep existing top picks if they exist
@@ -246,9 +470,15 @@ class HomeViewModel: ObservableObject {
             print("❌ HomeViewModel: Error loading top picks: \(error.localizedDescription)")
             
             await MainActor.run {
+                // Only show error message if we don't have existing data
                 if topPicks.isEmpty {
-                    // Only show error if we don't have any existing top picks
-                    errorMessage = "Could not load top picks: \(error.localizedDescription)"
+                    if error.localizedDescription.contains("offline") || 
+                       error.localizedDescription.contains("network connection") ||
+                       error.localizedDescription.contains("The Internet connection appears to be offline") {
+                        errorMessage = "No internet connection. Please check your connection and try again."
+                    } else {
+                        errorMessage = "Could not load top picks: \(error.localizedDescription)"
+                    }
                     showError = true
                 } else {
                     print("⚠️ HomeViewModel: Error refreshing, but keeping existing \(self.topPicks.count) top picks")
@@ -272,20 +502,36 @@ class HomeViewModel: ObservableObject {
             return restaurant
         }
         
-        // If not found, trigger a background fetch if not already pending
-        if !pendingRestaurantRequests.contains(product.restaurantId) && 
-           shouldFetchRestaurantDetails(forId: product.restaurantId) {
-            Task {
-                do {
-                    pendingRestaurantRequests.insert(product.restaurantId)
-                    let restaurant = try await networkUtils.fetchRestaurant(with: product.restaurantId)
+        // Create a local copy of the restaurant ID to avoid capture issues
+        let restaurantId = product.restaurantId
+        
+        // Launch a background task to fetch the restaurant details
+        // We'll do this without checking shouldFetchRestaurantDetails first
+        // since that now requires async/await which we can't do in a sync method
+        Task {
+            // Make the check inside the task instead
+            if !pendingRestaurantRequests.contains(restaurantId) {
+                let shouldFetch = await shouldFetchRestaurantDetails(forId: restaurantId)
+                if shouldFetch {
                     await MainActor.run {
-                        restaurantDetailsCache[product.restaurantId] = restaurant
+                        // Add to pending requests on main thread to prevent race conditions
+                        pendingRestaurantRequests.insert(restaurantId)
                     }
-                    pendingRestaurantRequests.remove(product.restaurantId)
-                } catch {
-                    print("⚠️ Failed to fetch restaurant \(product.restaurantId): \(error.localizedDescription)")
-                    pendingRestaurantRequests.remove(product.restaurantId)
+                    
+                    do {
+                        let restaurant = try await networkUtils.fetchRestaurant(with: restaurantId)
+                        await MainActor.run {
+                            restaurantDetailsCache[restaurantId] = restaurant
+                            // Remove from pending requests on main thread to avoid thread conflicts
+                            pendingRestaurantRequests.remove(restaurantId)
+                        }
+                    } catch {
+                        print("⚠️ Failed to fetch restaurant \(restaurantId): \(error.localizedDescription)")
+                        // Make sure to always remove from pending on main thread
+                        await MainActor.run {
+                            pendingRestaurantRequests.remove(restaurantId)
+                        }
+                    }
                 }
             }
         }
@@ -303,6 +549,7 @@ class HomeViewModel: ObservableObject {
     }
     
     // ADDED: Check if we should fetch restaurant details
+    @MainActor
     func shouldFetchRestaurantDetails(forId restaurantId: String) -> Bool {
         let now = Date().timeIntervalSince1970
         if let lastRequestTime = lastRestaurantDetailRequests[restaurantId] {
@@ -336,7 +583,8 @@ struct HomeView: View {
     @State private var initialLoadStarted = false // Track if initial load has started
     @FocusState private var isSearchFieldFocused: Bool
     
-    private let minRefreshInterval: TimeInterval = 30
+    // Increase minimum refresh interval to prevent excessive refreshes
+    private let minRefreshInterval: TimeInterval = 60 // 60 seconds between refreshes
     
     // Initializer to set initial loading states
     init() {
@@ -553,17 +801,24 @@ struct HomeView: View {
     
     private func loadData() {
         Task {
-            // Set loading indicators first
-            await MainActor.run {
-                viewModel.isLoading = true
-                viewModel.isLoadingTopPicks = true
-            }
-            
             // Check if we should debounce this refresh action
             let currentTime = Date().timeIntervalSince1970
             if currentTime - lastRefreshActionTime < minRefreshInterval {
-                print("⏱️ Refresh action debounced - too soon since last refresh (\(Int(currentTime - lastRefreshActionTime))s)")
+                print("⏱️ Refresh action debounced - too soon since last refresh (\(Int(currentTime - lastRefreshActionTime))s). Need to wait \(Int(minRefreshInterval - (currentTime - lastRefreshActionTime)))s more.")
+                
+                // Still set loading to false to avoid UI getting stuck
+                await MainActor.run {
+                    viewModel.isLoading = false
+                    viewModel.isLoadingTopPicks = false
+                    isPullingToRefresh = false
+                }
                 return
+            }
+            
+            // Set loading indicators only after debounce check
+            await MainActor.run {
+                viewModel.isLoading = true
+                viewModel.isLoadingTopPicks = true
             }
             
             // Update the last refresh time BEFORE making any API calls
@@ -579,6 +834,11 @@ struct HomeView: View {
             
             // Wait for both tasks to complete
             _ = await (topPicksTask, restaurantsTask)
+            
+            // Always reset the pulling state
+            await MainActor.run {
+                isPullingToRefresh = false
+            }
         }
     }
     
@@ -656,42 +916,19 @@ struct HomeView: View {
                     if geo.frame(in: .global).minY > 80 && !isPullingToRefresh && !viewModel.isLoading {
                         Spacer()
                             .onAppear {
+                                // Prevent excessive refreshes
+                                let currentTime = Date().timeIntervalSince1970
+                                if currentTime - lastRefreshActionTime < minRefreshInterval {
+                                    print("⏱️ Pull-to-refresh debounced - need to wait \(Int(minRefreshInterval - (currentTime - lastRefreshActionTime)))s more")
+                                    return
+                                }
+                                
                                 isPullingToRefresh = true
                                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                                 
                                 // Refresh data
                                 Task {
-                                    // Check if we should debounce this refresh action
-                                    let currentTime = Date().timeIntervalSince1970
-                                    if currentTime - lastRefreshActionTime < minRefreshInterval {
-                                        print("⏱️ Main pull-to-refresh debounced - too soon since last refresh (\(Int(currentTime - lastRefreshActionTime))s)")
-                                        await MainActor.run {
-                                            isPullingToRefresh = false
-                                        }
-                                        return
-                                    }
-                                    
-                                    // Update the last refresh time BEFORE making API calls to prevent simultaneous requests
-                                    await MainActor.run {
-                                        lastRefreshActionTime = currentTime
-                                    }
-                                    
-                                    print("🔄 Pull-to-refresh triggered for entire view")
-                                    
-                                    // Load restaurants first since they take longer
-                                    print("🔄 Starting sequential refresh - restaurants")
-                                    await viewModel.loadRestaurants()
-                                    print("✅ Pull-to-refresh restaurants completed")
-                                    
-                                    // Allow a small delay before next API call
-                                    try? await Task.sleep(nanoseconds: 500_000_000) // 500ms delay
-                                    
-                                    // Then load top picks
-                                    print("🔄 Starting sequential refresh - top picks")
-                                    await viewModel.loadTopPicks()
-                                    print("✅ Pull-to-refresh top picks completed")
-                                    
-                                    isPullingToRefresh = false
+                                    await loadData()
                                 }
                             }
                     } else if geo.frame(in: .global).minY <= 0 {
@@ -855,6 +1092,13 @@ struct HomeView: View {
         }
         // Pull to refresh
         .refreshable {
+            let currentTime = Date().timeIntervalSince1970
+            if currentTime - lastRefreshActionTime < minRefreshInterval {
+                print("⏱️ Native refreshable debounced - need to wait \(Int(minRefreshInterval - (currentTime - lastRefreshActionTime)))s more")
+                return
+            }
+            
+            print("🔄 Native refreshable triggered")
             await loadData()
         }
         .safeAreaInset(edge: .top) {
@@ -884,6 +1128,63 @@ struct HomeView: View {
                     Text("Loading top picks...")
                         .font(.system(size: 14))
                         .foregroundColor(.gray)
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 160)
+                .background(Color.white)
+            } else if viewModel.errorMessage != nil && viewModel.topPicks.isEmpty {
+                // Error state with retry button
+                VStack(spacing: 12) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.system(size: 30))
+                        .foregroundColor(.orange)
+                        .padding(.bottom, 5)
+                    
+                    Text("Couldn't load top picks")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(.gray)
+                        .padding(.bottom, 5)
+                    
+                    Text(viewModel.errorMessage ?? "Network error")
+                        .font(.system(size: 13))
+                        .foregroundColor(.gray)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 40)
+                        .padding(.bottom, 5)
+                    
+                    Button {
+                        Task {
+                            // Set loading state before fetching
+                            await MainActor.run {
+                                viewModel.isLoadingTopPicks = true
+                                viewModel.errorMessage = nil
+                            }
+                            
+                            // Check if we should debounce this refresh action
+                            let currentTime = Date().timeIntervalSince1970
+                            if currentTime - lastRefreshActionTime < minRefreshInterval {
+                                print("⏱️ Manual refresh debounced - too soon since last refresh (\(Int(currentTime - lastRefreshActionTime))s)")
+                                return
+                            }
+                            
+                            // Update the last refresh time
+                            lastRefreshActionTime = currentTime
+                            
+                            print("🔄 Manual refresh of top picks initiated")
+                            await viewModel.loadTopPicks()
+                        }
+                    } label: {
+                        HStack {
+                            Image(systemName: "arrow.clockwise")
+                            Text("Retry")
+                        }
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 25)
+                        .padding(.vertical, 10)
+                        .background(AppColors.primaryGreen)
+                        .cornerRadius(20)
+                    }
                 }
                 .frame(maxWidth: .infinity)
                 .frame(height: 160)
@@ -1036,7 +1337,7 @@ struct HomeView: View {
                 .padding(.top, 5)
             
             if viewModel.isLoading {
-                // Enhanced loading state
+                // Enhanced loading state with better messaging
                 VStack(spacing: 15) {
                     ProgressView()
                         .progressViewStyle(CircularProgressViewStyle(tint: AppColors.primaryGreen))
@@ -1045,9 +1346,70 @@ struct HomeView: View {
                     Text("Loading restaurants...")
                         .font(.system(size: 16))
                         .foregroundColor(.gray)
+                    
+                    Text("This might take a moment")
+                        .font(.system(size: 13))
+                        .foregroundColor(.gray.opacity(0.8))
                 }
                 .frame(maxWidth: .infinity)
                 .frame(minHeight: 200)
+                .padding(.vertical, 60)
+                .background(Color.white)
+            } else if viewModel.errorMessage != nil && filteredRestaurants.isEmpty {
+                // Error state with retry button
+                VStack(spacing: 15) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.system(size: 40))
+                        .foregroundColor(.orange)
+                        .padding(.bottom, 5)
+                    
+                    Text("Couldn't load restaurants")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundColor(.gray)
+                        .padding(.bottom, 5)
+                    
+                    Text(viewModel.errorMessage ?? "Network error")
+                        .font(.system(size: 14))
+                        .foregroundColor(.gray)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 40)
+                        .padding(.bottom, 5)
+                    
+                    Button {
+                        Task {
+                            // Set loading state before fetching
+                            await MainActor.run {
+                                viewModel.isLoading = true
+                                viewModel.errorMessage = nil
+                            }
+                            
+                            // Check if we should debounce this refresh action
+                            let currentTime = Date().timeIntervalSince1970
+                            if currentTime - lastRefreshActionTime < minRefreshInterval {
+                                print("⏱️ Restaurant retry debounced - too soon since last refresh (\(Int(currentTime - lastRefreshActionTime))s)")
+                                return
+                            }
+                            
+                            // Update the last refresh time
+                            lastRefreshActionTime = currentTime
+                            
+                            print("🔄 Manual refresh of restaurants initiated")
+                            await viewModel.loadRestaurants()
+                        }
+                    } label: {
+                        HStack {
+                            Image(systemName: "arrow.clockwise")
+                            Text("Retry")
+                        }
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 25)
+                        .padding(.vertical, 10)
+                        .background(AppColors.primaryGreen)
+                        .cornerRadius(20)
+                    }
+                }
+                .frame(maxWidth: .infinity)
                 .padding(.vertical, 60)
                 .background(Color.white)
             } else if filteredRestaurants.isEmpty {
@@ -1066,13 +1428,18 @@ struct HomeView: View {
                         Button {
                             selectedCuisine = nil
                         } label: {
-                            Text("Show all restaurants")
-                                .font(.system(size: 14, weight: .medium))
-                                .foregroundColor(AppColors.primaryGreen)
+                            HStack {
+                                Image(systemName: "arrow.clockwise")
+                                Text("Show all restaurants")
+                            }
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(AppColors.primaryGreen)
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 8)
+                            .background(AppColors.primaryGreen.opacity(0.1))
+                            .cornerRadius(20)
                         }
-                        .padding(.top, 5)
                     } else {
-                        // Add refresh button when no restaurants are available
                         Button {
                             Task {
                                 // Set loading state before fetching
@@ -1080,12 +1447,16 @@ struct HomeView: View {
                                     viewModel.isLoading = true
                                 }
                                 
+                                // Check if we should debounce this refresh action
                                 let currentTime = Date().timeIntervalSince1970
                                 if currentTime - lastRefreshActionTime < minRefreshInterval {
+                                    print("⏱️ Manual refresh debounced - too soon since last refresh (\(Int(currentTime - lastRefreshActionTime))s)")
                                     return
                                 }
                                 
+                                // Update the last refresh time
                                 lastRefreshActionTime = currentTime
+                                
                                 print("🔄 Manual refresh of restaurants initiated")
                                 await viewModel.loadRestaurants()
                             }
@@ -1101,33 +1472,34 @@ struct HomeView: View {
                             .background(AppColors.primaryGreen.opacity(0.1))
                             .cornerRadius(20)
                         }
-                        .padding(.top, 5)
                     }
                 }
                 .frame(maxWidth: .infinity)
-                .frame(minHeight: 200)
-                .padding(.vertical, 40)
+                .padding(.vertical, 60)
                 .background(Color.white)
             } else {
-                // Restaurant count
-                Text("\(filteredRestaurants.count) Restaurant\(filteredRestaurants.count == 1 ? "" : "s") available for you")
-                    .font(.system(size: 14))
-                    .foregroundColor(.gray)
-                    .padding(.horizontal, 20)
-                    .padding(.top, 5)
-                    .padding(.bottom, 5)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.white)
-                
-                // List of restaurants
+                // Restaurant list with pull-to-refresh capability
                 LazyVStack(spacing: 15) {
                     ForEach(filteredRestaurants) { restaurant in
-                        RestaurantCard(restaurant: restaurant)
-                            .padding(.horizontal, 20)
+                        NavigationLink {
+                            RestaurantDetailView(restaurant: restaurant)
+                                .environmentObject(orderManager)
+                                .environmentObject(favoriteManager)
+                        } label: {
+                            RestaurantCard(restaurant: restaurant)
+                                .background(Color.white)
+                                .cornerRadius(15)
+                                .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
+                                .padding(.horizontal, 20)
+                        }
                     }
+                    
+                    // Add bottom padding for tab bar
+                    Spacer()
+                        .frame(height: 20)
                 }
-                .padding(.vertical, 10)
-                .padding(.bottom, 80) // Extra padding for tab bar
+                .padding(.top, 10)
+                .padding(.bottom, 20)
             }
         }
     }

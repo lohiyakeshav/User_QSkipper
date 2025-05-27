@@ -5,6 +5,21 @@ class NetworkDiagnostics {
     static let shared = NetworkDiagnostics()
     private init() {}
     
+    /// Quick check for network connectivity, returns true if connected
+    func checkConnectivity() async -> Bool {
+        // First try our API server - this is most important
+        let (apiReachable, _, _) = await testAPIConnectivity()
+        
+        // If our API server is reachable, we're definitely connected
+        if apiReachable {
+            return true
+        }
+        
+        // If our API server is not reachable, check general internet
+        // to distinguish between API server down vs. no internet
+        return await checkInternetConnectivity()
+    }
+    
     /// Tests the connectivity to the backend API with a simple ping
     func testAPIConnectivity() async -> (isReachable: Bool, responseTime: TimeInterval, error: Error?) {
         let startTime = Date()
@@ -13,7 +28,15 @@ class NetworkDiagnostics {
             print("🔍 NetworkDiagnostics: Testing connectivity to API using APIClient...")
             
             // Use APIClient to test connectivity
-            let _: Data = try await APIClient.shared.request(path: APIEndpoints.ping, forceRequest: true)
+            let responseData: Data = try await APIClient.shared.request(path: APIEndpoints.ping, forceRequest: true)
+            
+            // Verify the response is "hi home page"
+            if let responseString = String(data: responseData, encoding: .utf8),
+               responseString.contains("hi home page") {
+                print("✅ NetworkDiagnostics: Received expected home page response")
+            } else {
+                print("⚠️ NetworkDiagnostics: Connected but unexpected response format")
+            }
             
             let endTime = Date()
             let responseTime = endTime.timeIntervalSince(startTime)
@@ -54,10 +77,21 @@ class NetworkDiagnostics {
                 let method = path == APIEndpoints.orderPlaced || path == APIEndpoints.scheduleOrderPlaced ? "OPTIONS" : "GET"
                 
                 // Use APIClient for the request, forcing it to bypass rate limiting
-                let _: Data = try await APIClient.shared.request(path: path, method: method, forceRequest: true)
+                let responseData: Data = try await APIClient.shared.request(path: path, method: method, forceRequest: true)
                 
-                results[name] = true
-                print("✅ Endpoint \(name) is reachable")
+                // For the base endpoint, verify it contains the expected response
+                if name == "Base", let responseString = String(data: responseData, encoding: .utf8) {
+                    if responseString.contains("hi home page") {
+                        results[name] = true
+                        print("✅ Endpoint \(name) is reachable with expected response")
+                    } else {
+                        print("⚠️ Endpoint \(name) response format unexpected: \(responseString)")
+                        results[name] = true // Still count as reachable even if format is unexpected
+                    }
+                } else {
+                    results[name] = true
+                    print("✅ Endpoint \(name) is reachable")
+                }
             } catch {
                 results[name] = false
                 print("❌ Endpoint \(name) test failed: \(error.localizedDescription)")

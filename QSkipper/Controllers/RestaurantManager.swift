@@ -35,13 +35,22 @@ class RestaurantManager: ObservableObject {
         self.isLoading = true
         self.error = nil
         
+        // Store existing restaurants for fallback
+        let existingRestaurants = self.restaurants
+        
         do {
             print("📍 Fetching all restaurants...")
             let restaurants = try await networkUtils.fetchRestaurants()
             
             print("✅ Successfully fetched \(restaurants.count) restaurants")
             
-            self.restaurants = restaurants
+            // Only update if we received data
+            if !restaurants.isEmpty {
+                self.restaurants = restaurants
+            } else {
+                print("⚠️ Received empty restaurants array, keeping existing data")
+            }
+            
             self.isLoading = false
             
             return restaurants
@@ -50,6 +59,13 @@ class RestaurantManager: ObservableObject {
             print("❌ Error fetching restaurants: \(error)")
             self.error = error.localizedDescription
             self.isLoading = false
+            
+            // If we have existing data, return it instead of throwing
+            if !existingRestaurants.isEmpty {
+                print("✅ Returning \(existingRestaurants.count) existing restaurants despite fetch error")
+                return existingRestaurants
+            }
+            
             throw error
         }
     }
@@ -175,6 +191,9 @@ class RestaurantManager: ObservableObject {
         self.isLoading = true
         self.error = nil
         
+        // Store existing top picks for fallback
+        let existingTopPicks = self.topPicks
+        
         print("🔍 RestaurantManager: Starting top picks fetch")
         
         do {
@@ -188,7 +207,13 @@ class RestaurantManager: ObservableObject {
                 print("🍽️ Top Pick #\(index + 1): \(product.name), ID: \(product.id), RestaurantID: \(product.restaurantId), PhotoID: \(product.photoId ?? "None")")
             }
             
-            self.topPicks = topPicks
+            // Only update if we received data
+            if !topPicks.isEmpty {
+                self.topPicks = topPicks
+            } else {
+                print("⚠️ Received empty top picks array, keeping existing data")
+            }
+            
             self.isLoading = false
             
             return topPicks
@@ -198,8 +223,14 @@ class RestaurantManager: ObservableObject {
             self.error = error.localizedDescription
             self.isLoading = false
             
-            // Return empty array to prevent UI disruption
-            return []
+            // If we have existing data, return it instead of throwing
+            if !existingTopPicks.isEmpty {
+                print("✅ Returning \(existingTopPicks.count) existing top picks despite fetch error")
+                return existingTopPicks
+            }
+            
+            // Only throw if we have no existing data
+            throw error
         }
     }
     

@@ -54,5 +54,5 @@ struct APIEndpoints {
     }
     
     // Diagnostics
-    static let ping = "/ping"
+    static let ping = "/"
 } 
