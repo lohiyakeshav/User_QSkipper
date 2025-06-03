@@ -22,16 +22,6 @@ struct LocationPickerView: View {
         span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
     )
     
-    // Popular locations near Galgotias University
-    private let popularLocations = [
-        "Galgotias University",
-        "Knowledge Park, Greater Noida",
-        "Alpha 1, Greater Noida",
-        "Alpha 2, Greater Noida",
-        "Beta 1, Greater Noida",
-        "Gamma 1, Greater Noida"
-    ]
-    
     var body: some View {
         VStack(spacing: 0) {
             // Header with custom back button
@@ -67,10 +57,12 @@ struct LocationPickerView: View {
                     .frame(height: 200)
                     .cornerRadius(12)
                     .padding(.horizontal, 20)
-                    .onChange(of: locationManager.location) { newLocation in
-                        if let location = newLocation {
-                            region.center = location.coordinate
-                        }
+                    .onAppear {
+                        // Always show Galgotias University location on the map
+                        region.center = CLLocationCoordinate2D(
+                            latitude: AppConstants.defaultLatitude,
+                            longitude: AppConstants.defaultLongitude
+                        )
                     }
                 
                 // Center pin
@@ -81,96 +73,59 @@ struct LocationPickerView: View {
                         .background(Circle().fill(Color.white).frame(width: 20, height: 20))
                         .offset(y: -15)
                     
-                    if locationManager.isPickupServiceAvailable() {
-                        Text("Pickup available")
-                            .font(AppFonts.caption)
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(AppColors.primaryGreen)
-                            .cornerRadius(15)
-                    } else {
-                        Text("Pickup not available")
-                            .font(AppFonts.caption)
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(AppColors.errorRed)
-                            .cornerRadius(15)
-                    }
+                    Text("Pickup available")
+                        .font(AppFonts.caption)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(AppColors.primaryGreen)
+                        .cornerRadius(15)
                 }
             }
             
-            // Current location
-            Button {
-                // Update location and dismiss the view
-                locationManager.requestLocation()
-                onSelect(locationManager.locationName)
-                // Dismiss this view
-                presentationMode.wrappedValue.dismiss()
-            } label: {
-                HStack {
-                    Image(systemName: "location.fill")
-                        .foregroundColor(AppColors.primaryGreen)
-                    
-                    Text("Use current location")
-                        .font(AppFonts.body)
-                        .foregroundColor(AppColors.darkGray)
-                    
-                    Spacer()
-                    
-                    Image(systemName: "chevron.right")
-                        .foregroundColor(AppColors.mediumGray)
-                }
-                .padding()
-                .background(Color.white)
-                .cornerRadius(8)
-                .shadow(color: Color.black.opacity(0.05), radius: 2, y: 1)
-                .padding(.horizontal, 20)
-                .padding(.top, 20)
-            }
-            
-            // Popular locations list
+            // Available location heading and button
             VStack(alignment: .leading, spacing: 10) {
-                Text("POPULAR LOCATIONS")
+                Text("AVAILABLE LOCATION")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(.gray)
                     .padding(.horizontal, 20)
                     .padding(.top, 20)
                 
-                ForEach(popularLocations, id: \.self) { location in
-                    Button {
-                        // Update location and dismiss the view
-                        onSelect(location)
-                        // Dismiss this view
-                        presentationMode.wrappedValue.dismiss()
-                    } label: {
-                        HStack {
-                            Image(systemName: "mappin.and.ellipse")
-                                .foregroundColor(AppColors.primaryGreen)
-                            
-                            Text(location)
-                                .font(AppFonts.body)
-                                .foregroundColor(AppColors.darkGray)
-                            
-                            Spacer()
-                            
-                            Image(systemName: "chevron.right")
-                                .foregroundColor(AppColors.mediumGray)
-                        }
-                        .padding()
-                        .background(Color.white)
+                Button {
+                    // Always set location to Galgotias University
+                    onSelect("Galgotias University")
+                    // Dismiss this view
+                    presentationMode.wrappedValue.dismiss()
+                } label: {
+                    HStack {
+                        Image(systemName: "mappin.and.ellipse")
+                            .foregroundColor(AppColors.primaryGreen)
+                        
+                        Text("Galgotias University")
+                            .font(AppFonts.body)
+                            .foregroundColor(AppColors.darkGray)
+                        
+                        Spacer()
+                        
+                        Image(systemName: "chevron.right")
+                            .foregroundColor(AppColors.mediumGray)
                     }
-                    
-                    Divider()
-                        .padding(.horizontal, 20)
+                    .padding()
+                    .background(Color.white)
+                    .cornerRadius(8)
+                    .shadow(color: Color.black.opacity(0.05), radius: 2, y: 1)
+                    .padding(.horizontal, 20)
                 }
+                
+                Divider()
+                    .padding(.horizontal, 20)
+                    .padding(.top, 5)
             }
             
             Spacer()
         }
         .onAppear {
-            locationManager.requestLocation()
+            // No need to request user location since we're always using Galgotias University
         }
         .background(Color.gray.opacity(0.1).edgesIgnoringSafeArea(.all))
         .navigationBarBackButtonHidden(true)

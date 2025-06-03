@@ -704,7 +704,7 @@ struct HomeView: View {
         .background(
             NavigationLink(destination: 
                 LocationPickerView(onSelect: { newLocation in
-                    locationManager.locationName = newLocation
+                    locationManager.locationName = "Galgotias University"
                     isLoadingLocation = false
                     // Dismiss the LocationPickerView
                     showLocationPicker = false
@@ -966,7 +966,7 @@ struct HomeView: View {
                                         .foregroundColor(.gray)
                                     
                                     HStack(spacing: 4) {
-                                        Text("\(locationManager.locationName)")
+                                        Text("Galgotias University")
                                             .font(.system(size: 14, weight: .medium))
                                             .foregroundColor(.black)
                                         
