@@ -44,7 +44,9 @@ class RegisterViewModel: ObservableObject {
             self.otpSent = true
             self.isLoading = false
         } catch {
-            self.errorMessage = error.localizedDescription
+            // Use the AuthManager's error property if available, as it's already formatted correctly
+            self.errorMessage = authManager.error ?? error.localizedDescription
+            print("⚠️ Registration error displayed: \(self.errorMessage ?? "nil")")
             self.showError = true
             self.isLoading = false
         }
@@ -69,11 +71,14 @@ class RegisterViewModel: ObservableObject {
                 // User is now registered and logged in, navigate to location screen
                 self.navigateToLocation = true
             } else {
-                self.errorMessage = "Invalid OTP. Please try again."
+                // Use the AuthManager's error property if available
+                self.errorMessage = authManager.error ?? "Invalid OTP. Please try again."
                 self.showError = true
             }
         } catch {
-            self.errorMessage = error.localizedDescription
+            // Use the AuthManager's error property if available
+            self.errorMessage = authManager.error ?? error.localizedDescription
+            print("⚠️ OTP verification error displayed: \(self.errorMessage ?? "nil")")
             self.showError = true
             self.isLoading = false
         }

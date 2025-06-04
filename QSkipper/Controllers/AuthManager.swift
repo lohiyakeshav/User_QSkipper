@@ -189,7 +189,11 @@ class AuthManager: ObservableObject {
             }
         } catch {
             print("Register error: \(error)")
-            self.error = error.localizedDescription
+            if let networkError = error as? SimpleNetworkError {
+                self.error = networkError.message
+            } else {
+                self.error = error.localizedDescription
+            }
             throw error
         }
     }
@@ -249,7 +253,11 @@ class AuthManager: ObservableObject {
             }
         } catch {
             print("Verify register error: \(error)")
-            self.error = error.localizedDescription
+            if let networkError = error as? SimpleNetworkError {
+                self.error = networkError.message
+            } else {
+                self.error = error.localizedDescription
+            }
             throw error
         }
     }

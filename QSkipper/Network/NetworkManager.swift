@@ -9,12 +9,13 @@ import Foundation
 import UIKit
 
 // Using a unique name to avoid conflicts with NetworkUtils.swift
-enum SimpleNetworkError: Error {
+enum SimpleNetworkError: Error, LocalizedError {
     case invalidURL
     case invalidResponse
     case requestFailed(Error)
     case decodingFailed(Error)
     case serverError(Int, Data?)
+    case serverErrorWithMessage(Int, String)
     case unknown
     
     var message: String {
@@ -29,9 +30,16 @@ enum SimpleNetworkError: Error {
             return "Failed to decode response: \(error.localizedDescription)"
         case .serverError(let statusCode, _):
             return "Server error: \(statusCode)"
+        case .serverErrorWithMessage(let statusCode, let message):
+            return message.isEmpty ? "Server error: \(statusCode)" : message
         case .unknown:
             return "An unknown error occurred"
         }
+    }
+    
+    // Implementing LocalizedError to make sure our custom message is used
+    var errorDescription: String? {
+        return message
     }
 }
 
@@ -81,7 +89,14 @@ class SimpleNetworkManager {
             case .invalidResponse:
                 throw SimpleNetworkError.invalidResponse
             case .serverError(let code, let data):
-                throw SimpleNetworkError.serverError(code, data)
+                // Try to extract error message from server response
+                if let data = data, let errorResponse = try? JSONDecoder().decode(ErrorResponse.self, from: data) {
+                    throw SimpleNetworkError.serverErrorWithMessage(code, errorResponse.message)
+                } else if let data = data, let errorString = String(data: data, encoding: .utf8) {
+                    throw SimpleNetworkError.serverErrorWithMessage(code, errorString)
+                } else {
+                    throw SimpleNetworkError.serverError(code, data)
+                }
             case .networkError(let err):
                 throw SimpleNetworkError.requestFailed(err)
             case .decodingFailed(let err):
@@ -116,8 +131,13 @@ class SimpleNetworkManager {
             switch error {
             case .invalidURL:
                 throw SimpleNetworkError.invalidURL
-            case .serverError(let code, _):
-                throw SimpleNetworkError.serverError(code, nil)
+            case .serverError(let code, let data):
+                // Try to extract error message from server response
+                if let data = data, let errorResponse = try? JSONDecoder().decode(ErrorResponse.self, from: data) {
+                    throw SimpleNetworkError.serverErrorWithMessage(code, errorResponse.message)
+                } else {
+                    throw SimpleNetworkError.serverError(code, data)
+                }
             default:
                 throw SimpleNetworkError.requestFailed(error)
             }
@@ -125,4 +145,10 @@ class SimpleNetworkManager {
             throw SimpleNetworkError.requestFailed(error)
         }
     }
+}
+
+// Error response structure matching the server's JSON error format
+struct ErrorResponse: Decodable {
+    let success: Bool
+    let message: String
 } 
